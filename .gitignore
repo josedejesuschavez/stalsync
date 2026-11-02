@@ -1,0 +1,30 @@
+# Rust / Cargo
+/target/
+**/target/
+
+# Binarios compilados con rustc
+*.rs.bk
+hello
+*.exe
+*.out
+*.o
+*.rlib
+*.pdb
+
+# Cargo (descomenta si NO quieres versionar Cargo.lock en binarios)
+# Cargo.lock
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# SO
+.DS_Store
+Thumbs.db
+
+# Logs y temporales
+*.log
+*.tmp
