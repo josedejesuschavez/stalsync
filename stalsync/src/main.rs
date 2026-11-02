@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 fn usage() {
     eprintln!("uso:");
-    eprintln!("  stalsync sync <disco1> <disco2> [discoN...] [--dry-run] [-v|--verbose]");
+    eprintln!("  stalsync sync <disco1> <disco2> [discoN...] [--dry-run] [-v|--verbose] [--trash-days N]");
     eprintln!("  stalsync status <disco1> <disco2> [discoN...]");
     eprintln!("  stalsync refresh <disco1> <disco2> [discoN...] [--yes]");
 }
@@ -61,6 +61,12 @@ fn main() {
             let opts = stalsync::sync::Options {
                 dry_run: args.iter().any(|a| a == "--dry-run"),
                 verbose: args.iter().any(|a| a == "-v" || a == "--verbose"),
+                trash_days: args
+                    .iter()
+                    .position(|a| a == "--trash-days")
+                    .and_then(|i| args.get(i + 1))
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or_else(stalsync::trash::retention_default),
             };
             if let Err(e) = stalsync::sync::run(&disks, &opts) {
                 eprintln!("error: {e}");

@@ -19,6 +19,18 @@ const COPY_BUF: usize = 256 * 1024;
 pub struct Options {
     pub dry_run: bool,
     pub verbose: bool,
+    /// Días de retención de la papelera de borrados. 0 = unlink directo.
+    pub trash_days: u64,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Options {
+            dry_run: false,
+            verbose: false,
+            trash_days: crate::trash::retention_default(),
+        }
+    }
 }
 
 /// Salida de progreso: spinner de escaneo + una barra por disco destino
@@ -143,6 +155,15 @@ pub fn run(disks: &[PathBuf], opts: &Options) -> io::Result<()> {
     let started = Instant::now();
     let mut ui = Ui::new(disks.len(), opts.verbose);
 
+    // Retención de papeleras: antes de nada, purgar entradas viejas.
+    // En dry-run no se toca nada (ni siquiera la papelera).
+    let mut purged = 0usize;
+    if !opts.dry_run {
+        for disk in disks {
+            purged += crate::trash::purge(disk, opts.trash_days)?;
+        }
+    }
+
     // 1. Cargar manifiestos y escanear.
     let mut manifests = Vec::new();
     let mut scans = Vec::new();
@@ -232,12 +253,8 @@ pub fn run(disks: &[PathBuf], opts: &Options) -> io::Result<()> {
             Action::Delete { path, disks: ds } => {
                 for i in ds {
                     let p = disks[*i].join(path);
-                    ui.file(format!("borrando {}", p.display()));
-                    match fs::remove_file(&p) {
-                        Ok(()) => {}
-                        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
-                        Err(e) => return Err(e),
-                    }
+                    ui.file(format!("a papelera: {}", p.display()));
+                    crate::trash::remove_or_trash(&disks[*i], &p, opts.trash_days)?;
                 }
             }
             Action::RenameConflict { disk: i, from, to } => {
@@ -262,6 +279,9 @@ pub fn run(disks: &[PathBuf], opts: &Options) -> io::Result<()> {
         elapsed.as_secs_f64(),
         fmt_bytes(copied_bytes),
     );
+    if purged > 0 {
+        println!("🗑 {purged} entrada(s) de papelera purgada(s) (retención {} días)", opts.trash_days);
+    }
     if conflicts > 0 {
         println!("⚠ versiones perdedoras guardadas como *.conflict-<disco>-<ts> (no sincronizadas):");
         for a in &result.actions {

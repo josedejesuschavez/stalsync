@@ -162,7 +162,7 @@ fn disco_nuevo_recibe_el_estado_acordado_completo() {
     let mut paths = d.paths.clone();
     paths.extend(d3.paths.clone());
 
-    stalsync::sync::run(&paths, &stalsync::sync::Options { dry_run: false, verbose: false }).unwrap();
+    stalsync::sync::run(&paths, &stalsync::sync::Options { dry_run: false, verbose: false, ..Default::default() }).unwrap();
 
     assert_eq!(d3.read(0, "a.txt"), "uno");
     assert_eq!(d3.read(0, "b.txt"), "dos");

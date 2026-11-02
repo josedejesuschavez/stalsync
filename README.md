@@ -23,6 +23,10 @@ sin maestro: cualquier disco puede cambiar y los demás lo reciben.
   contenido distinto, gana el `mtime` más reciente; la versión perdedora se
   conserva renombrada en su disco (`*.conflict-<disco>-<ts>`) y **nunca se
   propaga**.
+- **Papelera de borrados**: los borrados propagados no hacen unlink() sino
+  rename a `<disco>/.stalsync/trash/<timestamp>/<ruta>` (instantáneo, mismo
+  filesystem). Un borrado accidental es reversible y el rescate repropaga
+  solo. Retención configurable con `--trash-days` (0 = desactivada).
 - **Política conservadora**: una modificación gana sobre un borrado (borrar
   puede ser un accidente; una edición no debe perderse).
 - **Manifiesto por disco = caché, no verdad**: cada disco guarda su estado
@@ -68,6 +72,9 @@ stalsync sync ~/hdd1 ~/hdd2 ~/hdd3 --dry-run
 # Detalle por archivo (log scrolleable)
 stalsync sync ~/hdd1 ~/hdd2 ~/hdd3 -v
 
+# Retención de papelera distinta (default 30 días; 0 = desactivada)
+stalsync sync ~/hdd1 ~/hdd2 ~/hdd3 --trash-days 7
+
 # Diagnóstico de desfase (solo lectura, no toca nada)
 stalsync status ~/hdd1 ~/hdd2 ~/hdd3
 
@@ -112,6 +119,21 @@ plan: 138 copias (54.0 MiB), 0 borrados, 0 conflictos, 69 rutas en estado acorda
 
 Los conflictos se anuncian siempre al final (aunque no haya TTY), con la lista
 de versiones perdedoras conservadas.
+
+### Papelera: cómo rescatar un borrado
+
+Cuando un borrado se propaga, el archivo no desaparece: se mueve a la
+papelera del disco que lo perdió:
+
+```
+~/hdd2/.stalsync/trash/20261101_224733_123456789/docs/contrato.pdf
+```
+
+Para rescatarlo, copia o mueve el archivo de vuelta a su ruta original en
+cualquiera de los discos; el siguiente `sync` lo repropaga a los demás. La
+papelera se purga sola al inicio de cada sync (entradas con más de
+`--trash-days` días) y nunca interfiere con la sincronización (vive bajo
+`.stalsync/`, excluida del escaneo).
 
 ### `refresh`: reescribir manifiestos desde la realidad actual
 

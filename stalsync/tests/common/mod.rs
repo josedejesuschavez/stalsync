@@ -50,7 +50,7 @@ impl TestDisks {
     }
 
     pub fn sync(&self) {
-        stalsync::sync::run(&self.paths, &stalsync::sync::Options { dry_run: false, verbose: false }).unwrap();
+        stalsync::sync::run(&self.paths, &stalsync::sync::Options { dry_run: false, verbose: false, ..Default::default() }).unwrap();
     }
 
     /// Ejecuta un sync y devuelve (copias, borrados, conflictos) del plan.

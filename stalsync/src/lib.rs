@@ -10,3 +10,4 @@ pub mod refresh;
 pub mod scan;
 pub mod status;
 pub mod sync;
+pub mod trash;
