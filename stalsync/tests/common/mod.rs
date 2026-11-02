@@ -1,4 +1,8 @@
 //! Helpers compartidos por las baterías de tests.
+//!
+//! `allow(dead_code)`: cada batería usa solo el subconjunto de helpers que
+//! necesita; sin esto clippy reporta métodos "sin usar" por crate de test.
+#![allow(dead_code)]
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -13,7 +17,10 @@ impl TestDisks {
     pub fn new(n: usize) -> Self {
         let temps: Vec<_> = (0..n).map(|_| tempfile::tempdir().unwrap()).collect();
         let paths = temps.iter().map(|t| t.path().to_path_buf()).collect();
-        TestDisks { _temps: temps, paths }
+        TestDisks {
+            _temps: temps,
+            paths,
+        }
     }
 
     pub fn write(&self, i: usize, rel: &str, content: &str) {
@@ -50,13 +57,25 @@ impl TestDisks {
     }
 
     pub fn sync(&self) {
-        stalsync::sync::run(&self.paths, &stalsync::sync::Options { dry_run: false, verbose: false, ..Default::default() }).unwrap();
+        stalsync::sync::run(
+            &self.paths,
+            &stalsync::sync::Options {
+                dry_run: false,
+                verbose: false,
+                ..Default::default()
+            },
+        )
+        .unwrap();
     }
 
     /// Ejecuta un sync y devuelve (copias, borrados, conflictos) del plan.
     pub fn sync_stats(&self) -> (usize, usize, usize) {
         use stalsync::merge::{self, Action};
-        let manifests: Vec<_> = self.paths.iter().map(|p| stalsync::manifest::load(p).unwrap()).collect();
+        let manifests: Vec<_> = self
+            .paths
+            .iter()
+            .map(|p| stalsync::manifest::load(p).unwrap())
+            .collect();
         let scans: Vec<_> = self
             .paths
             .iter()

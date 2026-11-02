@@ -5,7 +5,7 @@
 //! Deleted (estaba, ya no), Absent (sin entrada en el mapa).
 
 use stalsync::manifest::FileEntry;
-use stalsync::merge::{merge, Action};
+use stalsync::merge::{Action, merge};
 use stalsync::scan::State;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -31,7 +31,9 @@ fn one(tag: &str) -> State {
 }
 
 fn scans(states: Vec<Vec<(&str, State)>>) -> (Vec<PathBuf>, Vec<HashMap<PathBuf, State>>) {
-    let disks: Vec<PathBuf> = (0..states.len()).map(|i| PathBuf::from(format!("/d{i}"))).collect();
+    let disks: Vec<PathBuf> = (0..states.len())
+        .map(|i| PathBuf::from(format!("/d{i}")))
+        .collect();
     let maps = states
         .into_iter()
         .map(|v| v.into_iter().map(|(p, s)| (PathBuf::from(p), s)).collect())
@@ -47,11 +49,7 @@ fn actions(r: &stalsync::merge::MergeResult) -> &[Action] {
 fn unico_changed_propaga_a_ausentes() {
     // REGLA: una sola modificación es el consenso; los discos que no tienen
     // el archivo (Absent, p. ej. un disco nuevo) lo reciben.
-    let (disks, s) = scans(vec![
-        vec![("a.txt", one("nuevo"))],
-        vec![],
-        vec![],
-    ]);
+    let (disks, s) = scans(vec![vec![("a.txt", one("nuevo"))], vec![], vec![]]);
     let r = merge(&disks, &s);
     assert!(matches!(
         actions(&r),
@@ -75,7 +73,13 @@ fn cambio_identico_en_dos_discos_propaga_al_tercero() {
         actions(&r),
         [Action::Copy { from, to, .. }] if (*from == 0 || *from == 1) && to == &vec![2]
     ));
-    assert_eq!(actions(&r).iter().filter(|a| matches!(a, Action::RenameConflict { .. })).count(), 0);
+    assert_eq!(
+        actions(&r)
+            .iter()
+            .filter(|a| matches!(a, Action::RenameConflict { .. }))
+            .count(),
+        0
+    );
 }
 
 #[test]
@@ -123,7 +127,10 @@ fn modificacion_resucita_borrado() {
         actions(&r),
         [Action::Copy { from: 0, to, .. }] if to.len() == 2 && to.contains(&1) && to.contains(&2)
     ));
-    assert_eq!(r.agreed[&PathBuf::from("a.txt")].hash, blake3::hash(b"editado").to_hex().to_string());
+    assert_eq!(
+        r.agreed[&PathBuf::from("a.txt")].hash,
+        blake3::hash(b"editado").to_hex().to_string()
+    );
 }
 
 #[test]
@@ -145,7 +152,10 @@ fn conflictos_gana_mtime_mas_reciente_y_perdedor_renombrado() {
         a,
         Action::Copy { from: 1, to, .. } if to.contains(&0) && to.contains(&2)
     )));
-    assert_eq!(r.agreed[&PathBuf::from("a.txt")].hash, blake3::hash(b"GANADOR").to_hex().to_string());
+    assert_eq!(
+        r.agreed[&PathBuf::from("a.txt")].hash,
+        blake3::hash(b"GANADOR").to_hex().to_string()
+    );
 }
 
 #[test]
@@ -158,9 +168,15 @@ fn conflicto_entre_tres_versiones() {
         vec![("a.txt", changed(1, 500, "v2"))],
     ]);
     let r = merge(&disks, &s);
-    let renames = actions(&r).iter().filter(|a| matches!(a, Action::RenameConflict { .. })).count();
+    let renames = actions(&r)
+        .iter()
+        .filter(|a| matches!(a, Action::RenameConflict { .. }))
+        .count();
     assert_eq!(renames, 2, "los dos perdedores conservan su versión");
-    assert_eq!(r.agreed[&PathBuf::from("a.txt")].hash, blake3::hash(b"v3-gana").to_hex().to_string());
+    assert_eq!(
+        r.agreed[&PathBuf::from("a.txt")].hash,
+        blake3::hash(b"v3-gana").to_hex().to_string()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -180,7 +196,13 @@ fn clean_no_compite_contra_changed() {
         vec![("a.txt", clean(4, 100, "base"))],
     ]);
     let r = merge(&disks, &s);
-    assert_eq!(actions(&r).iter().filter(|a| matches!(a, Action::RenameConflict { .. })).count(), 0);
+    assert_eq!(
+        actions(&r)
+            .iter()
+            .filter(|a| matches!(a, Action::RenameConflict { .. }))
+            .count(),
+        0
+    );
     assert!(actions(&r).iter().any(|a| matches!(
         a,
         Action::Copy { from: 0, to, .. } if to.len() == 2 && to.contains(&1) && to.contains(&2)

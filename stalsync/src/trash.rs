@@ -20,8 +20,8 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::manifest::MANIFEST_DIR;
 use crate::Ctx;
+use crate::manifest::MANIFEST_DIR;
 
 pub const TRASH_DIR: &str = "trash";
 const RETENTION_DEFAULT_DAYS: u64 = 30;
@@ -94,8 +94,7 @@ pub fn remove_or_trash(disk: &Path, path: &Path, days: u64) -> io::Result<()> {
     }
     fs::create_dir_all(dest.parent().unwrap())
         .ctx(|| format!("creando papelera de {}", disk.display()))?;
-    fs::rename(path, &dest)
-        .ctx(|| format!("moviendo {} a la papelera", path.display()))?;
+    fs::rename(path, &dest).ctx(|| format!("moviendo {} a la papelera", path.display()))?;
     Ok(())
 }
 

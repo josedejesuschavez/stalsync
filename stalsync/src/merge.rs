@@ -11,11 +11,19 @@ use std::path::{Path, PathBuf};
 #[derive(Clone, Debug)]
 pub enum Action {
     /// Copiar `path` desde el disco `from` hacia los discos `to`.
-    Copy { path: PathBuf, from: usize, to: Vec<usize> },
+    Copy {
+        path: PathBuf,
+        from: usize,
+        to: Vec<usize>,
+    },
     /// Borrar `path` en los discos indicados.
     Delete { path: PathBuf, disks: Vec<usize> },
     /// Renombrar la versión perdedora de un conflicto en un disco.
-    RenameConflict { disk: usize, from: PathBuf, to: PathBuf },
+    RenameConflict {
+        disk: usize,
+        from: PathBuf,
+        to: PathBuf,
+    },
 }
 
 pub struct MergeResult {
@@ -89,7 +97,10 @@ pub fn merge(disks: &[PathBuf], scans: &[HashMap<PathBuf, State>]) -> MergeResul
                 // Hubo borrados → propagar el borrado a los que aún lo tienen.
                 let victims: Vec<usize> = present.iter().map(|(i, _, _)| *i).collect();
                 if !victims.is_empty() {
-                    actions.push(Action::Delete { path: path.clone(), disks: victims });
+                    actions.push(Action::Delete {
+                        path: path.clone(),
+                        disks: victims,
+                    });
                 }
                 // No entra al estado acordado.
             } else {
@@ -119,7 +130,11 @@ pub fn merge(disks: &[PathBuf], scans: &[HashMap<PathBuf, State>]) -> MergeResul
                     .filter(|i| !grupo_ganador.iter().any(|(p, _)| p == i))
                     .collect();
                 if !to.is_empty() {
-                    actions.push(Action::Copy { path: path.clone(), from, to });
+                    actions.push(Action::Copy {
+                        path: path.clone(),
+                        from,
+                        to,
+                    });
                 }
                 agreed.insert(path, agreed_entry);
             }
@@ -160,11 +175,15 @@ pub fn merge(disks: &[PathBuf], scans: &[HashMap<PathBuf, State>]) -> MergeResul
                     .map(|(i, _, _)| *i),
             );
             to.extend(deleted.iter().copied());
-            to.extend((0..n).filter(|i| {
-                !present.iter().any(|(p, _, _)| p == i) && !deleted.contains(i)
-            }));
+            to.extend(
+                (0..n).filter(|i| !present.iter().any(|(p, _, _)| p == i) && !deleted.contains(i)),
+            );
             if !to.is_empty() {
-                actions.push(Action::Copy { path: path.clone(), from: win_idx, to });
+                actions.push(Action::Copy {
+                    path: path.clone(),
+                    from: win_idx,
+                    to,
+                });
             }
             agreed.insert(path, win_entry.clone());
         } else {
@@ -181,20 +200,25 @@ pub fn merge(disks: &[PathBuf], scans: &[HashMap<PathBuf, State>]) -> MergeResul
                     to.push(*i);
                 }
             }
-            to.extend(present.iter().filter(|(i, _, _)| {
-                *i != win_idx
-                    && !changed.iter().any(|(c, _)| c == i)
-                    && needs(*i, &present)
-            }).map(|(i, _, _)| *i));
+            to.extend(
+                present
+                    .iter()
+                    .filter(|(i, _, _)| {
+                        *i != win_idx && !changed.iter().any(|(c, _)| c == i) && needs(*i, &present)
+                    })
+                    .map(|(i, _, _)| *i),
+            );
             to.extend(deleted.iter().copied());
             to.extend((0..n).filter(|i| {
-                *i != win_idx
-                    && !present.iter().any(|(p, _, _)| p == i)
-                    && !deleted.contains(i)
+                *i != win_idx && !present.iter().any(|(p, _, _)| p == i) && !deleted.contains(i)
             }));
 
             if !to.is_empty() {
-                actions.push(Action::Copy { path: path.clone(), from: win_idx, to });
+                actions.push(Action::Copy {
+                    path: path.clone(),
+                    from: win_idx,
+                    to,
+                });
             }
             agreed.insert(path, win_entry.clone());
         }
@@ -202,4 +226,3 @@ pub fn merge(disks: &[PathBuf], scans: &[HashMap<PathBuf, State>]) -> MergeResul
 
     MergeResult { actions, agreed }
 }
-

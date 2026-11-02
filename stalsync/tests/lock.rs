@@ -51,7 +51,7 @@ fn discos_sin_stalsync_previo_tambien_bloquean() {
     let tmp = tempfile::tempdir().unwrap();
     let a = tmp.path().join("solo");
     std::fs::create_dir_all(&a).unwrap();
-    let _l1 = lock::acquire_all(&[a.clone()]).unwrap();
+    let _l1 = lock::acquire_all(std::slice::from_ref(&a)).unwrap();
     // acquire_all creó .stalsync/lock aunque no existiera antes.
     assert!(a.join(".stalsync").join("lock").is_file());
     assert!(lock::acquire_all(&[a]).is_err());

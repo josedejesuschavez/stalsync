@@ -12,11 +12,11 @@
 //!   los discos que aún lo tienen.
 //! - Una modificación pendiente puede revertirse: si los otros discos tienen
 //!   la versión vieja, la regla de mayoría la restaurará.
-//! Por eso el CLI pide confirmación antes de ejecutarlo.
+//!   Por eso el CLI pide confirmación antes de ejecutarlo.
 
+use crate::Ctx;
 use crate::manifest::{self, FileEntry};
 use crate::scan::{self, State};
-use crate::Ctx;
 use std::collections::HashMap;
 use std::io;
 use std::path::PathBuf;
@@ -39,10 +39,10 @@ pub fn refresh(disks: &[PathBuf]) -> io::Result<Vec<DiskRefresh>> {
     let mut reports = Vec::new();
     for disk in disks {
         eprintln!("re-escaneando {}...", disk.display());
-        let old = manifest::load(disk)
-            .ctx(|| format!("leyendo manifiesto de {}", disk.display()))?;
-        let states = scan::scan_disk(disk, &old)
-            .ctx(|| format!("escaneando {}", disk.display()))?;
+        let old =
+            manifest::load(disk).ctx(|| format!("leyendo manifiesto de {}", disk.display()))?;
+        let states =
+            scan::scan_disk(disk, &old).ctx(|| format!("escaneando {}", disk.display()))?;
 
         // El nuevo manifiesto ES el contenido actual del disco.
         let mut rebuilt: HashMap<PathBuf, FileEntry> = HashMap::new();

@@ -14,7 +14,10 @@ use std::fs;
 use std::path::Path;
 
 fn opts_con_papelera(days: u64) -> Options {
-    Options { trash_days: days, ..Default::default() }
+    Options {
+        trash_days: days,
+        ..Default::default()
+    }
 }
 
 fn run(d: &TestDisks, days: u64) {
@@ -57,14 +60,24 @@ fn borrado_va_a_papelera_y_conserva_contenido() {
     assert!(!d.exists(1, "docs/a.txt"), "el borrado se propaga igual");
     let entries = trash_entries(&d.paths[1]);
     assert_eq!(entries.len(), 1, "la copia de d1 va a su papelera");
-    assert_eq!(fs::read_to_string(&entries[0]).unwrap(), "contenido valioso");
-    assert!(entries[0].to_string_lossy().contains("docs"), "conserva la ruta relativa");
-    assert_eq!(trash_entries(&d.paths[0]).len(), 0, "d0 ya no tenía el archivo: nada que trashear");
+    assert_eq!(
+        fs::read_to_string(&entries[0]).unwrap(),
+        "contenido valioso"
+    );
+    assert!(
+        entries[0].to_string_lossy().contains("docs"),
+        "conserva la ruta relativa"
+    );
+    assert_eq!(
+        trash_entries(&d.paths[0]).len(),
+        0,
+        "d0 ya no tenía el archivo: nada que trashear"
+    );
 }
 
 #[test]
 fn restaurar_desde_papelera_repropaga() {
- // FLUJO DE RESCATE: borrado accidental → el usuario saca el archivo de la
+    // FLUJO DE RESCATE: borrado accidental → el usuario saca el archivo de la
     // papelera → el siguiente sync lo repropaga a los demás discos.
     let d = TestDisks::new(2);
     d.write(0, "a.txt", "x");
@@ -120,8 +133,12 @@ fn purga_elimina_entradas_viejas() {
 
     let purged = trash::purge(&d.paths[1], 30).unwrap();
     assert_eq!(purged, 1, "solo la entrada vieja se purga");
-    assert_eq!(trash_entries(&d.paths[1]).len(), 1, "la entrada reciente sobrevive");
-    assert!(vieja.join("obsoleto.txt").exists() == false);
+    assert_eq!(
+        trash_entries(&d.paths[1]).len(),
+        1,
+        "la entrada reciente sobrevive"
+    );
+    assert!(!vieja.join("obsoleto.txt").exists());
 }
 
 #[test]
@@ -156,7 +173,11 @@ fn dos_borrados_del_mismo_path_no_colapsan() {
     run(&d, 30);
 
     let entries = trash_entries(&d.paths[1]);
-    assert_eq!(entries.len(), 2, "dos versiones del mismo path en la papelera");
+    assert_eq!(
+        entries.len(),
+        2,
+        "dos versiones del mismo path en la papelera"
+    );
     let contenidos: Vec<String> = entries
         .iter()
         .map(|e| fs::read_to_string(e).unwrap())

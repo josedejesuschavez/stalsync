@@ -12,7 +12,11 @@ fn cli() -> Command {
 }
 
 fn args(disks: &TestDisks) -> Vec<String> {
-    disks.paths.iter().map(|p| p.to_string_lossy().into_owned()).collect()
+    disks
+        .paths
+        .iter()
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect()
 }
 
 #[test]
@@ -35,11 +39,7 @@ fn sin_subcomando_es_error_de_uso() {
 #[test]
 fn sync_con_un_solo_disco_es_error_de_uso() {
     let disks = TestDisks::new(1);
-    cli()
-        .arg("sync")
-        .arg(&disks.paths[0])
-        .assert()
-        .code(2);
+    cli().arg("sync").arg(&disks.paths[0]).assert().code(2);
 }
 
 #[test]
@@ -61,7 +61,10 @@ fn trash_days_invalido_es_error_de_uso() {
     // REGRESIÓN: antes un valor no numérico se silenciaba y caía al default.
     let disks = TestDisks::new(2);
     let mut cmd = cli();
-    cmd.arg("sync").args(args(&disks)).arg("--trash-days").arg("abc");
+    cmd.arg("sync")
+        .args(args(&disks))
+        .arg("--trash-days")
+        .arg("abc");
     cmd.assert().code(2);
 }
 
@@ -73,7 +76,10 @@ fn regresion_valor_de_trash_days_no_es_un_disco() {
     disks.write(0, "f.txt", "hola");
 
     let mut cmd = cli();
-    cmd.arg("sync").args(args(&disks)).arg("--trash-days").arg("7");
+    cmd.arg("sync")
+        .args(args(&disks))
+        .arg("--trash-days")
+        .arg("7");
     cmd.assert().code(0);
 
     assert_eq!(disks.read(1, "f.txt"), "hola");
@@ -121,7 +127,11 @@ fn refresh_exige_confirmacion_sin_tty() {
         .code(1);
 
     let mut cmd = cli();
-    cmd.arg("refresh").args(args(&disks)).arg("--yes").assert().code(0);
+    cmd.arg("refresh")
+        .args(args(&disks))
+        .arg("--yes")
+        .assert()
+        .code(0);
 }
 
 #[test]

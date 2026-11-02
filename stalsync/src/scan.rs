@@ -1,8 +1,8 @@
 //! Escaneo de un disco con detección HASH_THEN_MTIME:
 //! solo se hashea cuando size o mtime difieren del manifiesto.
 
-use crate::manifest::FileEntry;
 use crate::Ctx;
+use crate::manifest::FileEntry;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{self, Read};
@@ -86,9 +86,17 @@ pub fn scan_disk(
                     .ctx(|| format!("hasheando {}", entry.path().display()))?;
                 if hash == me.hash {
                     // Mismo contenido, solo cambió el mtime.
-                    State::Clean(FileEntry { size, mtime_ns, hash })
+                    State::Clean(FileEntry {
+                        size,
+                        mtime_ns,
+                        hash,
+                    })
                 } else {
-                    State::Changed(FileEntry { size, mtime_ns, hash })
+                    State::Changed(FileEntry {
+                        size,
+                        mtime_ns,
+                        hash,
+                    })
                 }
             }
             // No está en el manifiesto: archivo nuevo.

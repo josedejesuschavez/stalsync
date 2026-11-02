@@ -90,7 +90,11 @@ pub fn load(disk: &Path) -> std::io::Result<HashMap<PathBuf, FileEntry>> {
                     },
                 );
             }
-            Err(e) => eprintln!("advertencia: manifiesto {} línea {} inválida: {e}", path.display(), n + 1),
+            Err(e) => eprintln!(
+                "advertencia: manifiesto {} línea {} inválida: {e}",
+                path.display(),
+                n + 1
+            ),
         }
     }
     Ok(map)
@@ -109,7 +113,12 @@ pub fn save(disk: &Path, entries: &HashMap<PathBuf, FileEntry>) -> std::io::Resu
         // Header de versión en la primera línea. Un lector antiguo (sin
         // esta lógica) lo ignora con warning: la línea no parsea como
         // entrada, comportamiento tolerante heredado de load.
-        serde_json::to_writer(&mut w, &Header { format: FORMAT_VERSION })?;
+        serde_json::to_writer(
+            &mut w,
+            &Header {
+                format: FORMAT_VERSION,
+            },
+        )?;
         w.write_all(b"\n")?;
         for (path, e) in entries {
             let line = Line {

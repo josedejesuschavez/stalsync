@@ -112,7 +112,12 @@ fn integra_cambios_hechos_a_mano() {
     let conflict = std::fs::read_dir(&d.paths[0])
         .unwrap()
         .map(|e| e.unwrap().path())
-        .find(|p| p.file_name().unwrap().to_string_lossy().contains(".conflict-"))
+        .find(|p| {
+            p.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .contains(".conflict-")
+        })
         .unwrap();
     std::fs::rename(&conflict, d.paths[0].join("a.txt")).unwrap();
 

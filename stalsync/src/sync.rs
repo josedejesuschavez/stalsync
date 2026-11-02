@@ -5,10 +5,10 @@
 //! - No TTY:   silencioso durante la pasada (apto para logs/CI); resumen al final.
 //! - verbose:  una línea por archivo (log scrolleable), independiente del TTY.
 
+use crate::Ctx;
 use crate::manifest::{self, FileEntry};
 use crate::merge::{self, Action};
 use crate::scan;
-use crate::Ctx;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::fs::{self, File};
 use std::io::{self, IsTerminal, Read, Write};
@@ -174,12 +174,11 @@ pub fn run(disks: &[PathBuf], opts: &Options) -> io::Result<()> {
     let mut manifests = Vec::new();
     let mut scans = Vec::new();
     for disk in disks {
-        let manifest = manifest::load(disk)
-            .ctx(|| format!("leyendo manifiesto de {}", disk.display()))?;
+        let manifest =
+            manifest::load(disk).ctx(|| format!("leyendo manifiesto de {}", disk.display()))?;
         ui.phase(format!("escaneando {}...", disk.display()));
         scans.push(
-            scan::scan_disk(disk, &manifest)
-                .ctx(|| format!("escaneando {}", disk.display()))?,
+            scan::scan_disk(disk, &manifest).ctx(|| format!("escaneando {}", disk.display()))?,
         );
         manifests.push(manifest);
     }
@@ -255,9 +254,17 @@ pub fn run(disks: &[PathBuf], opts: &Options) -> io::Result<()> {
                     .get(path)
                     .expect("toda copia tiene entrada acordada")
                     .clone();
-                ui.file(format!("copiando {} -> {} disco(s)", path.display(), to.len()));
-                copy_one(&src, &to, &targets, &entry, &ui).ctx(|| {
-                    format!("copiando {} desde {}", path.display(), disks[*from].display())
+                ui.file(format!(
+                    "copiando {} -> {} disco(s)",
+                    path.display(),
+                    to.len()
+                ));
+                copy_one(&src, to, &targets, &entry, &ui).ctx(|| {
+                    format!(
+                        "copiando {} desde {}",
+                        path.display(),
+                        disks[*from].display()
+                    )
                 })?;
                 copied_bytes += entry.size * to.len() as u64;
                 copied_files += to.len();
@@ -275,7 +282,11 @@ pub fn run(disks: &[PathBuf], opts: &Options) -> io::Result<()> {
                 let new = disks[*i].join(to);
                 ui.phase(format!("conflicto: {} -> {}", old.display(), new.display()));
                 fs::rename(&old, &new).ctx(|| {
-                    format!("guardando versión perdedora {} en {}", old.display(), disks[*i].display())
+                    format!(
+                        "guardando versión perdedora {} en {}",
+                        old.display(),
+                        disks[*i].display()
+                    )
                 })?;
             }
         }
@@ -296,10 +307,15 @@ pub fn run(disks: &[PathBuf], opts: &Options) -> io::Result<()> {
         fmt_bytes(copied_bytes),
     );
     if purged > 0 {
-        println!("🗑 {purged} entrada(s) de papelera purgada(s) (retención {} días)", opts.trash_days);
+        println!(
+            "🗑 {purged} entrada(s) de papelera purgada(s) (retención {} días)",
+            opts.trash_days
+        );
     }
     if conflicts > 0 {
-        println!("⚠ versiones perdedoras guardadas como *.conflict-<disco>-<ts> (no sincronizadas):");
+        println!(
+            "⚠ versiones perdedoras guardadas como *.conflict-<disco>-<ts> (no sincronizadas):"
+        );
         for a in &result.actions {
             if let Action::RenameConflict { from, to, .. } = a {
                 println!("  {} -> {}", from.display(), to.display());
@@ -318,14 +334,12 @@ fn copy_one(
     entry: &FileEntry,
     ui: &Ui,
 ) -> io::Result<()> {
-    let mut input =
-        File::open(src).ctx(|| format!("abriendo origen {}", src.display()))?;
+    let mut input = File::open(src).ctx(|| format!("abriendo origen {}", src.display()))?;
 
     let mut outputs: Vec<File> = Vec::with_capacity(targets.len());
     for t in targets {
         if let Some(parent) = t.parent() {
-            fs::create_dir_all(parent)
-                .ctx(|| format!("creando directorio de {}", t.display()))?;
+            fs::create_dir_all(parent).ctx(|| format!("creando directorio de {}", t.display()))?;
         }
         outputs.push(File::create(t).ctx(|| format!("creando destino {}", t.display()))?);
     }
@@ -370,11 +384,15 @@ fn copy_one(
         if got != entry.size {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("tamaño inválido tras copiar {}: {got} != {}", t.display(), entry.size),
+                format!(
+                    "tamaño inválido tras copiar {}: {got} != {}",
+                    t.display(),
+                    entry.size
+                ),
             ));
         }
-        let got_hash = crate::scan::hash_file(t)
-            .ctx(|| format!("verificando hash de {}", t.display()))?;
+        let got_hash =
+            crate::scan::hash_file(t).ctx(|| format!("verificando hash de {}", t.display()))?;
         if got_hash != reference {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,

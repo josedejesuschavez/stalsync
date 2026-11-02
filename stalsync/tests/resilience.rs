@@ -5,7 +5,7 @@
 
 mod common;
 
-use common::{tree_hash, TestDisks};
+use common::{TestDisks, tree_hash};
 
 #[test]
 fn manifiesto_borrado_se_reconstruye_sin_copiar() {
@@ -21,7 +21,10 @@ fn manifiesto_borrado_se_reconstruye_sin_copiar() {
     // El disco sin manifiesto reporta todo como Changed, pero sus hashes ya
     // son los acordados → el merge no debe generar copias hacia él.
     let (copias, ..) = d.sync_stats();
-    assert_eq!(copias, 0, "contenido idéntico no se recopia aunque el manifiesto se perdiera");
+    assert_eq!(
+        copias, 0,
+        "contenido idéntico no se recopia aunque el manifiesto se perdiera"
+    );
     d.sync();
 
     assert_eq!(d.tree_hash(0), d.tree_hash(1));
@@ -77,7 +80,10 @@ fn manifiesto_de_version_futura_falla_con_error_claro() {
     let err = stalsync::manifest::load(&d.paths[0]).unwrap_err();
     let msg = err.to_string();
     assert!(msg.contains("formato v999"), "mensaje poco claro: {msg}");
-    assert!(msg.contains("actualiza stalsync"), "mensaje poco claro: {msg}");
+    assert!(
+        msg.contains("actualiza stalsync"),
+        "mensaje poco claro: {msg}"
+    );
 }
 
 #[test]
@@ -92,12 +98,22 @@ fn error_de_copia_identifica_disco_y_archivo() {
 
     let err = stalsync::sync::run(
         &d.paths,
-        &stalsync::sync::Options { dry_run: false, verbose: false, ..Default::default() },
+        &stalsync::sync::Options {
+            dry_run: false,
+            verbose: false,
+            ..Default::default()
+        },
     )
     .unwrap_err();
     let msg = err.to_string();
-    assert!(msg.contains("copiando f.txt"), "sin contexto de operación: {msg}");
-    assert!(msg.contains(d.paths[1].to_str().unwrap()), "sin disco destino: {msg}");
+    assert!(
+        msg.contains("copiando f.txt"),
+        "sin contexto de operación: {msg}"
+    );
+    assert!(
+        msg.contains(d.paths[1].to_str().unwrap()),
+        "sin disco destino: {msg}"
+    );
 }
 
 #[test]
@@ -110,9 +126,18 @@ fn escritura_de_manifiesto_es_atomica_no_deja_tmp() {
     let dir = d.paths[0].join(".stalsync");
     let restos: Vec<_> = std::fs::read_dir(&dir)
         .unwrap()
-        .filter(|e| e.as_ref().unwrap().file_name().to_string_lossy().contains(".tmp"))
+        .filter(|e| {
+            e.as_ref()
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .contains(".tmp")
+        })
         .collect();
-    assert!(restos.is_empty(), "no deben quedar temporales de manifiesto");
+    assert!(
+        restos.is_empty(),
+        "no deben quedar temporales de manifiesto"
+    );
 }
 
 #[test]
@@ -128,7 +153,15 @@ fn disco_desconectado_converge_al_reincorporarse() {
     // d2 "desconectado": sync solo de d1 y d3
     let dos = vec![d.paths[0].clone(), d.paths[2].clone()];
     d.write(0, "a.txt", "v2");
-    stalsync::sync::run(&dos, &stalsync::sync::Options { dry_run: false, verbose: false, ..Default::default() }).unwrap();
+    stalsync::sync::run(
+        &dos,
+        &stalsync::sync::Options {
+            dry_run: false,
+            verbose: false,
+            ..Default::default()
+        },
+    )
+    .unwrap();
 
     // d2 vuelve con su manifiesto viejo: debe recibir v2 y seguir teniendo b.txt
     d.sync();
@@ -199,11 +232,18 @@ fn doble_sync_es_estable_incluso_con_conflicto_resuelto() {
         .map(|e| e.unwrap().file_name().into_string().unwrap())
         .filter(|n| n.contains(".conflict-"))
         .collect();
-    assert_eq!(conflictos_en_d0.len(), 1, "el conflict file original sigue intacto y único");
+    assert_eq!(
+        conflictos_en_d0.len(),
+        1,
+        "el conflict file original sigue intacto y único"
+    );
     for i in [1, 2] {
-        let hay = std::fs::read_dir(&d.paths[i])
-            .unwrap()
-            .any(|e| e.unwrap().file_name().to_string_lossy().contains(".conflict-"));
+        let hay = std::fs::read_dir(&d.paths[i]).unwrap().any(|e| {
+            e.unwrap()
+                .file_name()
+                .to_string_lossy()
+                .contains(".conflict-")
+        });
         assert!(!hay, "nada propagó el conflict file a d{i}");
     }
 }

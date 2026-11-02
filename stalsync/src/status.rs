@@ -6,10 +6,10 @@
 //! como fuente única de verdad: lo que status reporta es exactamente lo que
 //! un `sync` haría.
 
+use crate::Ctx;
 use crate::manifest;
 use crate::merge::{self, Action};
 use crate::scan;
-use crate::Ctx;
 use std::io;
 use std::path::PathBuf;
 
@@ -61,12 +61,8 @@ pub fn compute_status(disks: &[PathBuf]) -> io::Result<StatusReport> {
     let mut scans = Vec::new();
     for disk in disks {
         eprintln!("escaneando {}...", disk.display());
-        let m = manifest::load(disk)
-            .ctx(|| format!("leyendo manifiesto de {}", disk.display()))?;
-        scans.push(
-            scan::scan_disk(disk, &m)
-                .ctx(|| format!("escaneando {}", disk.display()))?,
-        );
+        let m = manifest::load(disk).ctx(|| format!("leyendo manifiesto de {}", disk.display()))?;
+        scans.push(scan::scan_disk(disk, &m).ctx(|| format!("escaneando {}", disk.display()))?);
     }
     let result = merge::merge(disks, &scans);
 
@@ -189,13 +185,7 @@ pub fn render(report: &StatusReport) -> String {
         writeln!(
             out,
             "{:<10} {:>18} {:>7} {:>22} {:>9} {:>10}  {}",
-            d.label,
-            locales,
-            d.envia,
-            recibe,
-            d.perdera,
-            d.conflictos,
-            marca
+            d.label, locales, d.envia, recibe, d.perdera, d.conflictos, marca
         )
         .unwrap();
     }

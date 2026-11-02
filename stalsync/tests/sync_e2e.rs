@@ -25,7 +25,10 @@ fn primer_sync_replica_todo_y_converge() {
     for i in [1, 2] {
         assert_eq!(d.read(i, "a.txt"), "contenido A");
         assert_eq!(d.read(i, "sub/b.txt"), "contenido B");
-        assert_eq!(d.mtime_ns(i, "a.txt"), 1_700_000_000_000_000_000 + 123_456_789);
+        assert_eq!(
+            d.mtime_ns(i, "a.txt"),
+            1_700_000_000_000_000_000 + 123_456_789
+        );
     }
     let h = d.tree_hash(0);
     assert_eq!(h, d.tree_hash(1));
@@ -128,7 +131,10 @@ fn conflicto_end_to_end_gana_mtime_y_conserva_perdedor() {
         assert!(!hay, "d{i} no debe tener conflict files");
     }
     let manifiesto = std::fs::read_to_string(d.paths[0].join(".stalsync/manifest.jsonl")).unwrap();
-    assert!(!manifiesto.contains(".conflict-"), "los conflict files no entran al manifiesto");
+    assert!(
+        !manifiesto.contains(".conflict-"),
+        "los conflict files no entran al manifiesto"
+    );
 }
 
 #[test]
@@ -162,7 +168,15 @@ fn disco_nuevo_recibe_el_estado_acordado_completo() {
     let mut paths = d.paths.clone();
     paths.extend(d3.paths.clone());
 
-    stalsync::sync::run(&paths, &stalsync::sync::Options { dry_run: false, verbose: false, ..Default::default() }).unwrap();
+    stalsync::sync::run(
+        &paths,
+        &stalsync::sync::Options {
+            dry_run: false,
+            verbose: false,
+            ..Default::default()
+        },
+    )
+    .unwrap();
 
     assert_eq!(d3.read(0, "a.txt"), "uno");
     assert_eq!(d3.read(0, "b.txt"), "dos");

@@ -73,7 +73,10 @@ fn confirm(yes: bool, warning: &str) -> bool {
     if std::io::stdin().read_line(&mut line).is_err() {
         return false;
     }
-    matches!(line.trim().to_lowercase().as_str(), "s" | "si" | "sí" | "y" | "yes")
+    matches!(
+        line.trim().to_lowercase().as_str(),
+        "s" | "si" | "sí" | "y" | "yes"
+    )
 }
 
 fn validate_disks(disks: &[PathBuf]) {
