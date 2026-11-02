@@ -332,6 +332,14 @@ fn copy_one(
         ui.progress(targets_idx, n as u64, &current);
     }
 
+    // Verificación BLAKE3 post-copia: "el hash es la verdad". Si el hash
+    // acordado está vacío (manifiesto viejo), se toma el del origen leído.
+    let reference = if entry.hash.is_empty() {
+        crate::scan::hash_file(src)?
+    } else {
+        entry.hash.clone()
+    };
+
     for (o, t) in outputs.into_iter().zip(targets) {
         o.sync_all()?;
         drop(o);
@@ -339,12 +347,25 @@ fn copy_one(
         let secs = entry.mtime_ns.div_euclid(1_000_000_000);
         let nanos = entry.mtime_ns.rem_euclid(1_000_000_000) as u32;
         filetime::set_file_mtime(t, filetime::FileTime::from_unix_time(secs, nanos))?;
-        // Verificación mínima: tamaño.
+        // Verificación de integridad: tamaño + hash BLAKE3 contra el acordado.
+        // Un destino corrupto se detecta AHORA (y el sync aborta antes de
+        // reescribir manifiestos: la próxima pasada lo reintenta entero).
         let got = fs::metadata(t)?.len();
         if got != entry.size {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!("tamaño inválido tras copiar {}: {got} != {}", t.display(), entry.size),
+            ));
+        }
+        let got_hash = crate::scan::hash_file(t)?;
+        if got_hash != reference {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "hash BLAKE3 inválido tras copiar {}: {got_hash} != {reference} \
+                     (destino corrupto o origen modificado durante la copia)",
+                    t.display()
+                ),
             ));
         }
     }

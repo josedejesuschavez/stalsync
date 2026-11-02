@@ -23,7 +23,7 @@ pub fn mtime_ns_of(md: &std::fs::Metadata) -> i64 {
     ft.unix_seconds() * 1_000_000_000 + ft.nanoseconds() as i64
 }
 
-fn hash_file(path: &Path) -> io::Result<String> {
+pub(crate) fn hash_file(path: &Path) -> io::Result<String> {
     let mut f = File::open(path)?;
     let mut hasher = blake3::Hasher::new();
     let mut buf = [0u8; 256 * 1024];

@@ -33,8 +33,8 @@ sin maestro: cualquier disco puede cambiar y los demás lo reciben.
   acordado en `<disco>/.stalsync/manifest.jsonl`. Si se pierde o corrompe, la
   siguiente pasada lo reconstruye — el contenido idéntico no se recopia.
 - **Escritura atómica de manifiestos** (tmp + fsync + rename) y copia con
-  `fsync` por archivo: un corte a mitad de sync no deja estado intermedio
-  comprometido.
+  `fsync` + **verificación BLAKE3 del destino**: un corte o un destino
+  corrupto a mitad de sync no deja estado intermedio comprometido.
 - **Sin dependencias en runtime**: un solo binario estático.
 
 ## Requisitos
@@ -189,7 +189,8 @@ Cada pasada ejecuta cuatro fases:
    (una entrada por ruta). Solo las entradas *modificadas* compiten como
    versiones nuevas; un disco desactualizado no es un conflicto.
 3. **Ejecución**: el origen se lee una vez y se escribe a N destinos en el
-   mismo bucle (búfer de 256 KiB), con `fsync` y verificación de tamaño.
+   mismo bucle (búfer de 256 KiB), con `fsync` y verificación BLAKE3 del
+   destino contra el hash acordado (tamaño + contenido).
 4. **Commit**: si todo salió bien, se reescriben los manifiestos de todos los
    discos de forma atómica. Si algo falló, ninguno se toca y la próxima pasada
    se autocura.
@@ -242,5 +243,4 @@ stalsync/
   grandes.
 - **Symlinks, hardlinks, xattrs, sparse files**: no gestionados (se ignoran).
 - **`io_uring`** para árboles con muchos archivos pequeños.
-- **Verificación post-copia por hash completo** (hoy: tamaño + fsync).
 - **exFAT/FAT32**: fuera de soporte por mtime de 2s.
