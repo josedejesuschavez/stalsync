@@ -56,6 +56,27 @@ impl TestDisks {
         ft.unix_seconds() * 1_000_000_000 + ft.nanoseconds() as i64
     }
 
+    /// Fija el mode POSIX (p. ej. 0o644, 0o755) de un archivo.
+    #[cfg(unix)]
+    pub fn set_mode(&self, i: usize, rel: &str, mode: u32) {
+        use std::os::unix::fs::PermissionsExt;
+        let p = self.paths[i].join(rel);
+        let mut perms = fs::metadata(&p).unwrap().permissions();
+        perms.set_mode(mode);
+        fs::set_permissions(&p, perms).unwrap();
+    }
+
+    /// Mode POSIX actual de un archivo (los bits de permiso, 0o777).
+    #[cfg(unix)]
+    pub fn mode(&self, i: usize, rel: &str) -> u32 {
+        use std::os::unix::fs::PermissionsExt;
+        fs::metadata(self.paths[i].join(rel))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777
+    }
+
     pub fn sync(&self) {
         stalsync::sync::run(
             &self.paths,
@@ -91,6 +112,7 @@ impl TestDisks {
                 Action::Copy { to, .. } => copies += to.len(),
                 Action::Delete { .. } => deletes += 1,
                 Action::RenameConflict { .. } => conflicts += 1,
+                Action::Chmod { .. } => {}
             }
         }
         (copies, deletes, conflicts)

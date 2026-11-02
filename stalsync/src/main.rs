@@ -34,6 +34,10 @@ enum Commands {
         /// Días de retención de la papelera (0 = desactivada)
         #[arg(long, default_value_t = stalsync::trash::retention_default())]
         trash_days: u64,
+
+        /// No preservar permisos POSIX al copiar (por default se preservan)
+        #[arg(long)]
+        no_perms: bool,
     },
 
     /// Diagnóstico de desfase entre discos, solo lectura
@@ -101,12 +105,14 @@ fn main() {
             dry_run,
             verbose,
             trash_days,
+            no_perms,
         } => {
             validate_disks(&disks);
             let opts = stalsync::sync::Options {
                 dry_run,
                 verbose,
                 trash_days,
+                preserve_perms: !no_perms,
             };
             if let Err(e) = stalsync::sync::run(&disks, &opts) {
                 eprintln!("error: {e}");

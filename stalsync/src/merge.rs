@@ -24,6 +24,13 @@ pub enum Action {
         from: PathBuf,
         to: PathBuf,
     },
+    /// Aplicar permisos POSIX `mode` en los discos indicados, SIN tocar el
+    /// contenido (propagación de un chmod; el contenido ya coincide).
+    Chmod {
+        path: PathBuf,
+        mode: u32,
+        disks: Vec<usize>,
+    },
 }
 
 pub struct MergeResult {
@@ -48,6 +55,33 @@ fn conflict_name(path: &Path, disk: &Path, mtime_ns: i64) -> PathBuf {
     match path.parent() {
         Some(parent) if parent != Path::new("") => parent.join(renamed),
         _ => PathBuf::from(renamed),
+    }
+}
+
+/// Emite Chmod para los discos presentes cuyo mode difiere del acordado.
+/// `copied_to` se excluye: la copia ya aplica el mode al crear el archivo.
+/// Solo actúa cuando el acordado tiene mode (nunca en Windows).
+fn push_chmod(
+    actions: &mut Vec<Action>,
+    path: &Path,
+    agreed: &FileEntry,
+    present: &[(usize, &FileEntry, bool)],
+    copied_to: &[usize],
+) {
+    let Some(mode) = agreed.mode else {
+        return;
+    };
+    let targets: Vec<usize> = present
+        .iter()
+        .filter(|(i, e, _)| !copied_to.contains(i) && e.mode != Some(mode))
+        .map(|(i, _, _)| *i)
+        .collect();
+    if !targets.is_empty() {
+        actions.push(Action::Chmod {
+            path: path.to_path_buf(),
+            mode,
+            disks: targets,
+        });
     }
 }
 
@@ -129,6 +163,9 @@ pub fn merge(disks: &[PathBuf], scans: &[HashMap<PathBuf, State>]) -> MergeResul
                 let to: Vec<usize> = (0..n)
                     .filter(|i| !grupo_ganador.iter().any(|(p, _)| p == i))
                     .collect();
+                // Divergencia de manifiestos: también alinear permisos.
+                // (Antes del Copy: `to` se mueve al pushear la acción.)
+                push_chmod(&mut actions, &path, &agreed_entry, &present, &to);
                 if !to.is_empty() {
                     actions.push(Action::Copy {
                         path: path.clone(),
@@ -136,7 +173,7 @@ pub fn merge(disks: &[PathBuf], scans: &[HashMap<PathBuf, State>]) -> MergeResul
                         to,
                     });
                 }
-                agreed.insert(path, agreed_entry);
+                agreed.insert(path.clone(), agreed_entry.clone());
             }
             continue;
         }
@@ -178,6 +215,10 @@ pub fn merge(disks: &[PathBuf], scans: &[HashMap<PathBuf, State>]) -> MergeResul
             to.extend(
                 (0..n).filter(|i| !present.iter().any(|(p, _, _)| p == i) && !deleted.contains(i)),
             );
+            // La copia aplica el mode al crear; los que ya tenían el
+            // contenido reciben solo el chmod. (Antes del Copy: `to` se
+            // mueve al pushear la acción.)
+            push_chmod(&mut actions, &path, win_entry, &present, &to);
             if !to.is_empty() {
                 actions.push(Action::Copy {
                     path: path.clone(),
@@ -185,7 +226,7 @@ pub fn merge(disks: &[PathBuf], scans: &[HashMap<PathBuf, State>]) -> MergeResul
                     to,
                 });
             }
-            agreed.insert(path, win_entry.clone());
+            agreed.insert(path.clone(), win_entry.clone());
         } else {
             // Conflicto real: versiones distintas en discos modificados.
             let mut to: Vec<usize> = Vec::new();
@@ -213,6 +254,7 @@ pub fn merge(disks: &[PathBuf], scans: &[HashMap<PathBuf, State>]) -> MergeResul
                 *i != win_idx && !present.iter().any(|(p, _, _)| p == i) && !deleted.contains(i)
             }));
 
+            push_chmod(&mut actions, &path, win_entry, &present, &to);
             if !to.is_empty() {
                 actions.push(Action::Copy {
                     path: path.clone(),
@@ -220,7 +262,7 @@ pub fn merge(disks: &[PathBuf], scans: &[HashMap<PathBuf, State>]) -> MergeResul
                     to,
                 });
             }
-            agreed.insert(path, win_entry.clone());
+            agreed.insert(path.clone(), win_entry.clone());
         }
     }
 

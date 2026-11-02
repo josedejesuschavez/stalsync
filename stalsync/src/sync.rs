@@ -22,6 +22,9 @@ pub struct Options {
     pub verbose: bool,
     /// Días de retención de la papelera de borrados. 0 = unlink directo.
     pub trash_days: u64,
+    /// Preservar permisos POSIX al copiar y propagar chmod. Default: true.
+    /// En Windows es un no-op (no hay modes POSIX).
+    pub preserve_perms: bool,
 }
 
 impl Default for Options {
@@ -30,6 +33,7 @@ impl Default for Options {
             dry_run: false,
             verbose: false,
             trash_days: crate::trash::retention_default(),
+            preserve_perms: true,
         }
     }
 }
@@ -191,6 +195,7 @@ pub fn run(disks: &[PathBuf], opts: &Options) -> io::Result<()> {
     let mut plan_bytes = 0u64;
     let mut deletes = 0usize;
     let mut conflicts = 0usize;
+    let mut chmods = 0usize;
     for a in &result.actions {
         match a {
             Action::Copy { to, .. } => {
@@ -198,6 +203,7 @@ pub fn run(disks: &[PathBuf], opts: &Options) -> io::Result<()> {
             }
             Action::Delete { .. } => deletes += 1,
             Action::RenameConflict { .. } => conflicts += 1,
+            Action::Chmod { disks, .. } => chmods += disks.len(),
         }
     }
     // Bytes a transferir por disco destino: tamaño acordado sumado a cada `to`
@@ -215,7 +221,7 @@ pub fn run(disks: &[PathBuf], opts: &Options) -> io::Result<()> {
     }
 
     println!(
-        "plan: {copies} copias ({}), {deletes} borrados, {conflicts} conflictos, {} rutas en estado acordado",
+        "plan: {copies} copias ({}), {deletes} borrados, {conflicts} conflictos, {chmods} chmods, {} rutas en estado acordado",
         fmt_bytes(plan_bytes),
         result.agreed.len()
     );
@@ -259,7 +265,7 @@ pub fn run(disks: &[PathBuf], opts: &Options) -> io::Result<()> {
                     path.display(),
                     to.len()
                 ));
-                copy_one(&src, to, &targets, &entry, &ui).ctx(|| {
+                copy_one(&src, to, &targets, &entry, opts.preserve_perms, &ui).ctx(|| {
                     format!(
                         "copiando {} desde {}",
                         path.display(),
@@ -289,6 +295,24 @@ pub fn run(disks: &[PathBuf], opts: &Options) -> io::Result<()> {
                     )
                 })?;
             }
+            Action::Chmod {
+                path,
+                mode,
+                disks: ds,
+            } => {
+                for i in ds {
+                    let p = disks[*i].join(path);
+                    ui.file(format!("chmod {:o}: {}", mode, p.display()));
+                    set_mode(&p, *mode).ctx(|| {
+                        format!(
+                            "aplicando permisos {:o} a {} en {}",
+                            mode,
+                            p.display(),
+                            disks[*i].display()
+                        )
+                    })?;
+                }
+            }
         }
     }
 
@@ -302,7 +326,7 @@ pub fn run(disks: &[PathBuf], opts: &Options) -> io::Result<()> {
     ui.finish();
     let elapsed = started.elapsed();
     println!(
-        "✔ completo en {:.1}s — {copied_files} archivos copiados ({}), {deletes} borrados, {conflicts} conflictos",
+        "✔ completo en {:.1}s — {copied_files} archivos copiados ({}), {deletes} borrados, {conflicts} conflictos, {chmods} chmods",
         elapsed.as_secs_f64(),
         fmt_bytes(copied_bytes),
     );
@@ -325,6 +349,21 @@ pub fn run(disks: &[PathBuf], opts: &Options) -> io::Result<()> {
     Ok(())
 }
 
+/// Aplica permisos POSIX a un archivo existente. No-op en plataformas sin
+/// modes POSIX (el merge nunca genera Chmod ahí, y entry.mode es None).
+#[cfg(unix)]
+fn set_mode(path: &std::path::Path, mode: u32) -> io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let mut perms = fs::metadata(path)?.permissions();
+    perms.set_mode(mode);
+    fs::set_permissions(path, perms)
+}
+
+#[cfg(not(unix))]
+fn set_mode(_path: &std::path::Path, _mode: u32) -> io::Result<()> {
+    Ok(())
+}
+
 /// Lee el origen una vez y escribe a todos los destinos en el mismo bucle.
 /// Preserva mtime y hace fsync por archivo.
 fn copy_one(
@@ -332,6 +371,7 @@ fn copy_one(
     targets_idx: &[usize],
     targets: &[PathBuf],
     entry: &FileEntry,
+    preserve_perms: bool,
     ui: &Ui,
 ) -> io::Result<()> {
     let mut input = File::open(src).ctx(|| format!("abriendo origen {}", src.display()))?;
@@ -402,6 +442,13 @@ fn copy_one(
                     t.display()
                 ),
             ));
+        }
+        // Preservar permisos acordados (no-op si no aplica o si no hay mode).
+        if preserve_perms {
+            if let Some(mode) = entry.mode {
+                set_mode(t, mode)
+                    .ctx(|| format!("aplicando permisos {:o} a {}", mode, t.display()))?;
+            }
         }
     }
     Ok(())

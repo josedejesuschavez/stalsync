@@ -30,6 +30,9 @@ pub struct FileEntry {
     pub mtime_ns: i64,
     /// BLAKE3 en hex. Vacío = desconocido (se recalcula al comparar).
     pub hash: String,
+    /// Permisos POSIX (mode). None = desconocido o plataforma sin modes
+    /// (Windows). Solo se propaga cuando es Some.
+    pub mode: Option<u32>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -38,6 +41,9 @@ struct Line {
     size: u64,
     mtime_ns: i64,
     hash: String,
+    /// Manifiestos heredados (v1) no traen este campo: default = desconocido.
+    #[serde(default)]
+    mode: Option<u32>,
 }
 
 pub fn manifest_path(disk: &Path) -> PathBuf {
@@ -87,6 +93,7 @@ pub fn load(disk: &Path) -> std::io::Result<HashMap<PathBuf, FileEntry>> {
                         size: l.size,
                         mtime_ns: l.mtime_ns,
                         hash: l.hash,
+                        mode: l.mode,
                     },
                 );
             }
@@ -126,6 +133,7 @@ pub fn save(disk: &Path, entries: &HashMap<PathBuf, FileEntry>) -> std::io::Resu
                 size: e.size,
                 mtime_ns: e.mtime_ns,
                 hash: e.hash.clone(),
+                mode: e.mode,
             };
             serde_json::to_writer(&mut w, &line)?;
             w.write_all(b"\n")?;

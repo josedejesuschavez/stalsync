@@ -30,6 +30,8 @@ pub struct DiskStatus {
     pub perdera: usize,
     /// Conflictos donde su versión perdió (quedará como *.conflict-*).
     pub conflictos: usize,
+    /// chmods que recibirá (propagación de un cambio de permisos).
+    pub permisos: usize,
 }
 
 impl DiskStatus {
@@ -40,6 +42,7 @@ impl DiskStatus {
             || self.recibe > 0
             || self.perdera > 0
             || self.conflictos > 0
+            || self.permisos > 0
     }
 }
 
@@ -115,6 +118,12 @@ pub fn compute_status(disks: &[PathBuf]) -> io::Result<StatusReport> {
             Action::RenameConflict { disk, .. } => {
                 pendientes += 1;
                 dss[*disk].conflictos += 1;
+            }
+            Action::Chmod { disks: ds, .. } => {
+                pendientes += ds.len();
+                for &i in ds {
+                    dss[i].permisos += 1;
+                }
             }
         }
     }

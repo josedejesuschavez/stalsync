@@ -13,7 +13,9 @@ use walkdir::WalkDir;
 pub enum State {
     /// Igual (en contenido) a lo que dice su propio manifiesto.
     Clean(FileEntry),
-    /// Contenido nuevo o distinto al de su manifiesto (o archivo nuevo).
+    /// Contenido nuevo/distinto al de su manifiesto (o archivo nuevo),
+    /// o mismo contenido con permisos (mode) distintos: un chmod también
+    /// es un cambio a propagar.
     Changed(FileEntry),
     /// Estaba en el manifiesto pero ya no existe en disco.
     Deleted,
@@ -22,6 +24,20 @@ pub enum State {
 pub fn mtime_ns_of(md: &std::fs::Metadata) -> i64 {
     let ft = filetime::FileTime::from_last_modification_time(md);
     ft.unix_seconds() * 1_000_000_000 + ft.nanoseconds() as i64
+}
+
+/// Permisos POSIX del archivo, si la plataforma los tiene. En Windows
+/// devuelve None: los manifiestos son intercambiables entre SO y los modes
+/// solo se propagan donde existen.
+#[cfg(unix)]
+pub(crate) fn mode_of(md: &std::fs::Metadata) -> Option<u32> {
+    use std::os::unix::fs::PermissionsExt;
+    Some(md.permissions().mode())
+}
+
+#[cfg(not(unix))]
+pub(crate) fn mode_of(_md: &std::fs::Metadata) -> Option<u32> {
+    None
 }
 
 pub(crate) fn hash_file(path: &Path) -> io::Result<String> {
@@ -72,13 +88,28 @@ pub fn scan_disk(
         let md = entry.metadata()?;
         let size = md.len();
         let mtime_ns = mtime_ns_of(&md);
+        let mode = mode_of(&md);
 
         let state = match manifest.get(&rel) {
-            // size + mtime coinciden: sin cambios, reutilizamos el hash del manifiesto.
-            Some(me) if me.size == size && me.mtime_ns == mtime_ns => State::Clean(FileEntry {
+            // size + mtime + mode coinciden: sin cambios, reutilizamos el
+            // hash del manifiesto.
+            Some(me) if me.size == size && me.mtime_ns == mtime_ns && me.mode == mode => {
+                State::Clean(FileEntry {
+                    size,
+                    mtime_ns,
+                    hash: me.hash.clone(),
+                    mode,
+                })
+            }
+            // size + mtime coinciden pero el mode difiere: cambió SOLO el
+            // chmod. Se reporta como Changed para que el merge propague el
+            // permiso (sin recopiar: el contenido está garantizado por
+            // size+mtime y el hash se reutiliza del manifiesto).
+            Some(me) if me.size == size && me.mtime_ns == mtime_ns => State::Changed(FileEntry {
                 size,
                 mtime_ns,
                 hash: me.hash.clone(),
+                mode,
             }),
             // Metadatos difieren: solo aquí pagamos el hash.
             Some(me) => {
@@ -90,12 +121,14 @@ pub fn scan_disk(
                         size,
                         mtime_ns,
                         hash,
+                        mode,
                     })
                 } else {
                     State::Changed(FileEntry {
                         size,
                         mtime_ns,
                         hash,
+                        mode,
                     })
                 }
             }
@@ -105,6 +138,7 @@ pub fn scan_disk(
                 mtime_ns,
                 hash: hash_file(entry.path())
                     .ctx(|| format!("hasheando {}", entry.path().display()))?,
+                mode,
             }),
         };
         seen.insert(rel.clone());

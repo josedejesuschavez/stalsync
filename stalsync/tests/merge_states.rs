@@ -15,6 +15,8 @@ fn entry(size: u64, mtime_ns: i64, tag: &str) -> FileEntry {
         size,
         mtime_ns,
         hash: blake3::hash(tag.as_bytes()).to_hex().to_string(),
+        // Los tests de merge no modelan permisos: mode desconocido.
+        mode: None,
     }
 }
 
