@@ -2,6 +2,7 @@
 //! solo se hashea cuando size o mtime difieren del manifiesto.
 
 use crate::manifest::FileEntry;
+use crate::Ctx;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{self, Read};
@@ -81,7 +82,8 @@ pub fn scan_disk(
             }),
             // Metadatos difieren: solo aquí pagamos el hash.
             Some(me) => {
-                let hash = hash_file(entry.path())?;
+                let hash = hash_file(entry.path())
+                    .ctx(|| format!("hasheando {}", entry.path().display()))?;
                 if hash == me.hash {
                     // Mismo contenido, solo cambió el mtime.
                     State::Clean(FileEntry { size, mtime_ns, hash })
@@ -93,7 +95,8 @@ pub fn scan_disk(
             None => State::Changed(FileEntry {
                 size,
                 mtime_ns,
-                hash: hash_file(entry.path())?,
+                hash: hash_file(entry.path())
+                    .ctx(|| format!("hasheando {}", entry.path().display()))?,
             }),
         };
         seen.insert(rel.clone());

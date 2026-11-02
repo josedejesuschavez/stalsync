@@ -16,6 +16,7 @@
 
 use crate::manifest::{self, FileEntry};
 use crate::scan::{self, State};
+use crate::Ctx;
 use std::collections::HashMap;
 use std::io;
 use std::path::PathBuf;
@@ -38,8 +39,10 @@ pub fn refresh(disks: &[PathBuf]) -> io::Result<Vec<DiskRefresh>> {
     let mut reports = Vec::new();
     for disk in disks {
         eprintln!("re-escaneando {}...", disk.display());
-        let old = manifest::load(disk)?;
-        let states = scan::scan_disk(disk, &old)?;
+        let old = manifest::load(disk)
+            .ctx(|| format!("leyendo manifiesto de {}", disk.display()))?;
+        let states = scan::scan_disk(disk, &old)
+            .ctx(|| format!("escaneando {}", disk.display()))?;
 
         // El nuevo manifiesto ES el contenido actual del disco.
         let mut rebuilt: HashMap<PathBuf, FileEntry> = HashMap::new();
@@ -69,7 +72,8 @@ pub fn refresh(disks: &[PathBuf]) -> io::Result<Vec<DiskRefresh>> {
         // fue del disco. Ya no serán un "borrado pendiente": el disco queda
         // como si nunca lo hubiera tenido.
         rep.eliminadas = old.keys().filter(|k| !rebuilt.contains_key(*k)).count();
-        manifest::save(disk, &rebuilt)?;
+        manifest::save(disk, &rebuilt)
+            .ctx(|| format!("escribiendo manifiesto de {}", disk.display()))?;
         reports.push(rep);
     }
     Ok(reports)

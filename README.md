@@ -169,9 +169,12 @@ nada.
 stalsync no requiere archivo de configuración: los discos se pasan como
 argumentos y el estado vive en cada disco.
 
-- **Manifiesto**: `<disco>/.stalsync/manifest.jsonl` (JSON Lines:
-  `path`, `size`, `mtime_ns`, `hash`). Es caché interna; no debe editarse a
-  mano, pero borrarlo es seguro — se reconstruye en el siguiente sync.
+- **Manifiesto**: `<disco>/.stalsync/manifest.jsonl` (JSON Lines: primera
+  línea `{"format":N}` con la versión del formato — un lector viejo la
+  ignora con warning — y entradas `path`, `size`, `mtime_ns`, `hash`). Es
+  caché interna; no debe editarse a mano, pero borrarlo es seguro — se
+  reconstruye en el siguiente sync. Un manifiesto de una versión *nueva* de
+  stalsync se rechaza con error claro, no se interpreta como basura.
 - **Archivos de conflicto**: `<nombre>.conflict-<disco>-<mtime_ns>`, solo en el
   disco perdedor. Su resolución es manual: el usuario decide cuál versión
   queda y borra el resto.

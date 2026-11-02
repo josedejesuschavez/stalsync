@@ -8,8 +8,21 @@ use std::fs::{self, File};
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
+use crate::Ctx;
+
 pub const MANIFEST_DIR: &str = ".stalsync";
 pub const MANIFEST_FILE: &str = "manifest.jsonl";
+
+/// Versión del formato del manifiesto. Subirla cuando cambie el formato;
+/// load rechaza versiones mayores con error claro en vez de interpretar
+/// basura. Los manifiestos sin header se asumen v1 (formato original).
+const FORMAT_VERSION: u64 = 1;
+
+/// Header opcional de la primera línea: declara la versión del formato.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct Header {
+    format: u64,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct FileEntry {
@@ -39,10 +52,32 @@ pub fn load(disk: &Path) -> std::io::Result<HashMap<PathBuf, FileEntry>> {
     let Ok(file) = File::open(&path) else {
         return Ok(map);
     };
+    let mut first = true;
     for (n, line) in BufReader::new(file).lines().enumerate() {
-        let line = line?;
+        let line = line.ctx(|| format!("leyendo {} línea {}", path.display(), n + 1))?;
         if line.trim().is_empty() {
             continue;
+        }
+        // Primera línea no vacía: si es un header, validar la versión del
+        // formato. Si no lo es, es un manifiesto heredado (v1 implícito)
+        // y la línea se procesa como entrada normal.
+        if first {
+            first = false;
+            if let Ok(h) = serde_json::from_str::<Header>(&line) {
+                if h.format > FORMAT_VERSION {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!(
+                            "manifiesto {} con formato v{} no soportado \
+                             (esta versión de stalsync entiende hasta v{FORMAT_VERSION}); \
+                             actualiza stalsync",
+                            path.display(),
+                            h.format
+                        ),
+                    ));
+                }
+                continue;
+            }
         }
         match serde_json::from_str::<Line>(&line) {
             Ok(l) => {
@@ -67,7 +102,15 @@ pub fn save(disk: &Path, entries: &HashMap<PathBuf, FileEntry>) -> std::io::Resu
     fs::create_dir_all(&dir)?;
     let tmp = dir.join("manifest.jsonl.tmp");
     {
-        let mut w = BufWriter::new(File::create(&tmp)?);
+        let mut w = BufWriter::new(
+            File::create(&tmp)
+                .ctx(|| format!("creando manifiesto temporal en {}", dir.display()))?,
+        );
+        // Header de versión en la primera línea. Un lector antiguo (sin
+        // esta lógica) lo ignora con warning: la línea no parsea como
+        // entrada, comportamiento tolerante heredado de load.
+        serde_json::to_writer(&mut w, &Header { format: FORMAT_VERSION })?;
+        w.write_all(b"\n")?;
         for (path, e) in entries {
             let line = Line {
                 path: path.clone(),
@@ -79,8 +122,11 @@ pub fn save(disk: &Path, entries: &HashMap<PathBuf, FileEntry>) -> std::io::Resu
             w.write_all(b"\n")?;
         }
         w.flush()?;
-        w.get_ref().sync_all()?;
+        w.get_ref()
+            .sync_all()
+            .ctx(|| format!("fsync del manifiesto temporal {}", tmp.display()))?;
     }
-    fs::rename(&tmp, manifest_path(disk))?;
+    fs::rename(&tmp, manifest_path(disk))
+        .ctx(|| format!("publicando manifiesto de {}", disk.display()))?;
     Ok(())
 }

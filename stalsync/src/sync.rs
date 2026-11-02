@@ -8,6 +8,7 @@
 use crate::manifest::{self, FileEntry};
 use crate::merge::{self, Action};
 use crate::scan;
+use crate::Ctx;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::fs::{self, File};
 use std::io::{self, IsTerminal, Read, Write};
@@ -164,7 +165,8 @@ pub fn run(disks: &[PathBuf], opts: &Options) -> io::Result<()> {
     let mut purged = 0usize;
     if !opts.dry_run {
         for disk in disks {
-            purged += crate::trash::purge(disk, opts.trash_days)?;
+            purged += crate::trash::purge(disk, opts.trash_days)
+                .ctx(|| format!("purgando papelera de {}", disk.display()))?;
         }
     }
 
@@ -172,9 +174,13 @@ pub fn run(disks: &[PathBuf], opts: &Options) -> io::Result<()> {
     let mut manifests = Vec::new();
     let mut scans = Vec::new();
     for disk in disks {
-        let manifest = manifest::load(disk)?;
+        let manifest = manifest::load(disk)
+            .ctx(|| format!("leyendo manifiesto de {}", disk.display()))?;
         ui.phase(format!("escaneando {}...", disk.display()));
-        scans.push(scan::scan_disk(disk, &manifest)?);
+        scans.push(
+            scan::scan_disk(disk, &manifest)
+                .ctx(|| format!("escaneando {}", disk.display()))?,
+        );
         manifests.push(manifest);
     }
 
@@ -250,7 +256,9 @@ pub fn run(disks: &[PathBuf], opts: &Options) -> io::Result<()> {
                     .expect("toda copia tiene entrada acordada")
                     .clone();
                 ui.file(format!("copiando {} -> {} disco(s)", path.display(), to.len()));
-                copy_one(&src, &to, &targets, &entry, &ui)?;
+                copy_one(&src, &to, &targets, &entry, &ui).ctx(|| {
+                    format!("copiando {} desde {}", path.display(), disks[*from].display())
+                })?;
                 copied_bytes += entry.size * to.len() as u64;
                 copied_files += to.len();
             }
@@ -258,21 +266,25 @@ pub fn run(disks: &[PathBuf], opts: &Options) -> io::Result<()> {
                 for i in ds {
                     let p = disks[*i].join(path);
                     ui.file(format!("a papelera: {}", p.display()));
-                    crate::trash::remove_or_trash(&disks[*i], &p, opts.trash_days)?;
+                    crate::trash::remove_or_trash(&disks[*i], &p, opts.trash_days)
+                        .ctx(|| format!("borrando {} en {}", p.display(), disks[*i].display()))?;
                 }
             }
             Action::RenameConflict { disk: i, from, to } => {
                 let old = disks[*i].join(from);
                 let new = disks[*i].join(to);
                 ui.phase(format!("conflicto: {} -> {}", old.display(), new.display()));
-                fs::rename(&old, &new)?;
+                fs::rename(&old, &new).ctx(|| {
+                    format!("guardando versión perdedora {} en {}", old.display(), disks[*i].display())
+                })?;
             }
         }
     }
 
     // 4. Si todo salió bien, reescribir los manifiestos con el estado acordado.
     for disk in disks {
-        manifest::save(disk, &result.agreed)?;
+        manifest::save(disk, &result.agreed)
+            .ctx(|| format!("escribiendo manifiesto de {}", disk.display()))?;
     }
 
     // 5. Resumen final: aquí se anuncian los conflictos, no enterrados en scroll.
@@ -306,14 +318,16 @@ fn copy_one(
     entry: &FileEntry,
     ui: &Ui,
 ) -> io::Result<()> {
-    let mut input = File::open(src)?;
+    let mut input =
+        File::open(src).ctx(|| format!("abriendo origen {}", src.display()))?;
 
     let mut outputs: Vec<File> = Vec::with_capacity(targets.len());
     for t in targets {
         if let Some(parent) = t.parent() {
-            fs::create_dir_all(parent)?;
+            fs::create_dir_all(parent)
+                .ctx(|| format!("creando directorio de {}", t.display()))?;
         }
-        outputs.push(File::create(t)?);
+        outputs.push(File::create(t).ctx(|| format!("creando destino {}", t.display()))?);
     }
 
     let mut buf = vec![0u8; COPY_BUF];
@@ -322,8 +336,9 @@ fn copy_one(
         if n == 0 {
             break;
         }
-        for o in &mut outputs {
-            o.write_all(&buf[..n])?;
+        for (o, t) in outputs.iter_mut().zip(targets) {
+            o.write_all(&buf[..n])
+                .ctx(|| format!("escribiendo {}", t.display()))?;
         }
         let current = src
             .file_name()
@@ -341,12 +356,13 @@ fn copy_one(
     };
 
     for (o, t) in outputs.into_iter().zip(targets) {
-        o.sync_all()?;
+        o.sync_all().ctx(|| format!("fsync de {}", t.display()))?;
         drop(o);
         // Preservar mtime acordado.
         let secs = entry.mtime_ns.div_euclid(1_000_000_000);
         let nanos = entry.mtime_ns.rem_euclid(1_000_000_000) as u32;
-        filetime::set_file_mtime(t, filetime::FileTime::from_unix_time(secs, nanos))?;
+        filetime::set_file_mtime(t, filetime::FileTime::from_unix_time(secs, nanos))
+            .ctx(|| format!("fijando mtime de {}", t.display()))?;
         // Verificación de integridad: tamaño + hash BLAKE3 contra el acordado.
         // Un destino corrupto se detecta AHORA (y el sync aborta antes de
         // reescribir manifiestos: la próxima pasada lo reintenta entero).
@@ -357,7 +373,8 @@ fn copy_one(
                 format!("tamaño inválido tras copiar {}: {got} != {}", t.display(), entry.size),
             ));
         }
-        let got_hash = crate::scan::hash_file(t)?;
+        let got_hash = crate::scan::hash_file(t)
+            .ctx(|| format!("verificando hash de {}", t.display()))?;
         if got_hash != reference {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,

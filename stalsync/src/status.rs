@@ -9,6 +9,7 @@
 use crate::manifest;
 use crate::merge::{self, Action};
 use crate::scan;
+use crate::Ctx;
 use std::io;
 use std::path::PathBuf;
 
@@ -60,8 +61,12 @@ pub fn compute_status(disks: &[PathBuf]) -> io::Result<StatusReport> {
     let mut scans = Vec::new();
     for disk in disks {
         eprintln!("escaneando {}...", disk.display());
-        let m = manifest::load(disk)?;
-        scans.push(scan::scan_disk(disk, &m)?);
+        let m = manifest::load(disk)
+            .ctx(|| format!("leyendo manifiesto de {}", disk.display()))?;
+        scans.push(
+            scan::scan_disk(disk, &m)
+                .ctx(|| format!("escaneando {}", disk.display()))?,
+        );
     }
     let result = merge::merge(disks, &scans);
 

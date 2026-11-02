@@ -48,6 +48,59 @@ fn manifiesto_corrupto_se_tolerante() {
 }
 
 #[test]
+fn manifiesto_heredado_sin_header_carga() {
+    // COMPATIBILIDAD: los manifiestos escritos antes del header de versión
+    // (primera línea ya era una entrada) siguen cargando como v1 implícito.
+    let d = TestDisks::new(1);
+    let mp = d.paths[0].join(".stalsync/manifest.jsonl");
+    std::fs::create_dir_all(mp.parent().unwrap()).unwrap();
+    std::fs::write(
+        &mp,
+        "{\"path\":\"a.txt\",\"size\":2,\"mtime_ns\":123,\"hash\":\"abc\"}\n",
+    )
+    .unwrap();
+
+    let m = stalsync::manifest::load(&d.paths[0]).unwrap();
+    assert_eq!(m.len(), 1);
+    assert_eq!(m[std::path::Path::new("a.txt")].hash, "abc");
+}
+
+#[test]
+fn manifiesto_de_version_futura_falla_con_error_claro() {
+    // INVARIANTE: un manifiesto escrito por una versión NUEVA de stalsync
+    // no se interpreta como basura: load falla nombrando el formato.
+    let d = TestDisks::new(1);
+    let mp = d.paths[0].join(".stalsync/manifest.jsonl");
+    std::fs::create_dir_all(mp.parent().unwrap()).unwrap();
+    std::fs::write(&mp, "{\"format\":999}\n").unwrap();
+
+    let err = stalsync::manifest::load(&d.paths[0]).unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("formato v999"), "mensaje poco claro: {msg}");
+    assert!(msg.contains("actualiza stalsync"), "mensaje poco claro: {msg}");
+}
+
+#[test]
+fn error_de_copia_identifica_disco_y_archivo() {
+    // INVARIANTE (ctx): un fallo de I/O dice qué se copiaba, desde dónde
+    // y qué destino falló — no solo "No space left on device".
+    let d = TestDisks::new(2);
+    d.write(0, "f.txt", "x");
+
+    // Destino no escribible: un directorio con el nombre del archivo.
+    std::fs::create_dir(d.paths[1].join("f.txt")).unwrap();
+
+    let err = stalsync::sync::run(
+        &d.paths,
+        &stalsync::sync::Options { dry_run: false, verbose: false, ..Default::default() },
+    )
+    .unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("copiando f.txt"), "sin contexto de operación: {msg}");
+    assert!(msg.contains(d.paths[1].to_str().unwrap()), "sin disco destino: {msg}");
+}
+
+#[test]
 fn escritura_de_manifiesto_es_atomica_no_deja_tmp() {
     // INVARIANTE: save hace tmp + fsync + rename. Nunca queda un .tmp
     // visible (que el siguiente load confundiría con manifiesto válido).
