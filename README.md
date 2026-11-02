@@ -35,6 +35,10 @@ sin maestro: cualquier disco puede cambiar y los demás lo reciben.
 - **Escritura atómica de manifiestos** (tmp + fsync + rename) y copia con
   `fsync` + **verificación BLAKE3 del destino**: un corte o un destino
   corrupto a mitad de sync no deja estado intermedio comprometido.
+- **Permisos POSIX preservados**: el mode viaja en el manifiesto y se aplica
+  al copiar; un `chmod` se propaga como un cambio más (chmod barato, sin
+  recopiar contenido). `--no-perms` desactiva. En Windows no aplica (no hay
+  modes POSIX; los manifiestos son intercambiables entre SO).
 - **Sin dependencias en runtime**: un solo binario estático.
 
 ## Requisitos
@@ -76,6 +80,9 @@ stalsync sync ~/hdd1 ~/hdd2 ~/hdd3 -v
 
 # Retención de papelera distinta (default 30 días; 0 = desactivada)
 stalsync sync ~/hdd1 ~/hdd2 ~/hdd3 --trash-days 7
+
+# No preservar permisos POSIX al copiar (por default SÍ se preservan)
+stalsync sync ~/hdd1 ~/hdd2 ~/hdd3 --no-perms
 
 # Diagnóstico de desfase (solo lectura, no toca nada)
 stalsync status ~/hdd1 ~/hdd2 ~/hdd3
