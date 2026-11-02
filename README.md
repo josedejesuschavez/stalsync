@@ -45,7 +45,9 @@ sin maestro: cualquier disco puede cambiar y los demás lo reciben.
   ```
 - Sistema de archivos con mtime de alta resolución y rename atómico
   (ext4, XFS, Btrfs, APFS…). **exFAT/FAT32 no está soportado** (mtime de 2s
-  rompe la detección de cambios).
+  rompe la detección de cambios). **NTFS (Windows) funciona**, pero redondea
+  mtimes a intervalos de 100ns: precisión mayor se pierde al escribir y
+  stalsync lo tolera vía hash (el contenido manda, no el mtime).
 
 ## Instalación
 

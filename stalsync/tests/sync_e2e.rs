@@ -18,7 +18,11 @@ fn primer_sync_replica_todo_y_converge() {
     let d = tres();
     d.write(0, "a.txt", "contenido A");
     d.write(0, "sub/b.txt", "contenido B");
-    d.set_mtime(0, "a.txt", 1_700_000_000, 123_456_789);
+    // nanos = 123_456_700 (múltiplo de 100): NTFS redondea mtimes a
+    // intervalos de 100ns (FILETIME); el test debe usar un mtime
+    // representable en todos los filesystems soportados. La tolerancia al
+    // redondeo la cubre la detección HASH_THEN_MTIME (hash = verdad).
+    d.set_mtime(0, "a.txt", 1_700_000_000, 123_456_700);
 
     d.sync();
 
@@ -27,7 +31,7 @@ fn primer_sync_replica_todo_y_converge() {
         assert_eq!(d.read(i, "sub/b.txt"), "contenido B");
         assert_eq!(
             d.mtime_ns(i, "a.txt"),
-            1_700_000_000_000_000_000 + 123_456_789
+            1_700_000_000_000_000_000 + 123_456_700
         );
     }
     let h = d.tree_hash(0);
