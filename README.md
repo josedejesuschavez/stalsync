@@ -71,15 +71,17 @@ stalsync sync ~/hdd1 ~/hdd2 ~/hdd3 -v
 
 La salida de progreso se adapta al contexto, como rsync/rclone/cargo:
 
-- **Terminal interactiva**: spinner de escaneo y barra de progreso con
-  bytes, velocidad y ETA, redibujada en una sola línea.
+- **Terminal interactiva**: spinner de escaneo y **una barra por disco
+  destino** con sus bytes, velocidad y ETA; el plan incluye el desglose
+  `por disco: hdd2: 30.0 GiB · hdd3: 30.0 GiB`.
 - **Pipe o CI (sin TTY)**: silenciosa durante la pasada; solo el plan y el
   resumen final, aptos para logs.
 - **`-v`/`--verbose`**: una línea por archivo, independientemente del TTY.
 
 ```
-plan: 138 copias (27.0 MiB), 0 borrados, 0 conflictos, 69 rutas en estado acordado
-✔ completo en 0.9s — 138 archivos copiados (27.0 MiB), 0 borrados, 0 conflictos
+plan: 138 copias (54.0 MiB), 0 borrados, 0 conflictos, 69 rutas en estado acordado
+  por disco: /home/jchavez/hdd2: 27.0 MiB · /home/jchavez/hdd3: 27.0 MiB
+✔ completo en 0.9s — 138 archivos copiados (54.0 MiB), 0 borrados, 0 conflictos
 ```
 
 Los conflictos se anuncian siempre al final (aunque no haya TTY), con la lista

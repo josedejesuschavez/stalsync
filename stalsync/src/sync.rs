@@ -8,7 +8,7 @@
 use crate::manifest::{self, FileEntry};
 use crate::merge::{self, Action};
 use crate::scan;
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::fs::{self, File};
 use std::io::{self, IsTerminal, Read, Write};
 use std::path::PathBuf;
@@ -21,31 +21,67 @@ pub struct Options {
     pub verbose: bool,
 }
 
-/// Salida de progreso: envuelve la barra (si hay TTY) y el modo verbose.
+/// Salida de progreso: spinner de escaneo + una barra por disco destino
+/// (MultiProgress), o log por línea en verbose. Sin TTY: silencioso.
 struct Ui {
-    bar: Option<ProgressBar>,
+    multi: Option<MultiProgress>,
+    scan: Option<ProgressBar>,
+    /// Barras por índice de disco; solo los discos destino de copias tienen barra.
+    disk_bars: Vec<Option<ProgressBar>>,
     verbose: bool,
 }
 
 impl Ui {
-    fn new(verbose: bool) -> Self {
-        let bar = if std::io::stderr().is_terminal() && !verbose {
-            let bar = ProgressBar::new(0);
-            bar.set_style(
+    fn new(n_disks: usize, verbose: bool) -> Self {
+        if std::io::stderr().is_terminal() && !verbose {
+            let multi = MultiProgress::new();
+            let scan = multi.add(ProgressBar::new_spinner());
+            scan.set_style(
                 ProgressStyle::with_template("{spinner:.green} {msg}")
                     .unwrap()
                     .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ "),
             );
-            Some(bar)
+            Ui {
+                multi: Some(multi),
+                scan: Some(scan),
+                disk_bars: vec![None; n_disks],
+                verbose,
+            }
         } else {
-            None
-        };
-        Ui { bar, verbose }
+            Ui {
+                multi: None,
+                scan: None,
+                disk_bars: Vec::new(),
+                verbose,
+            }
+        }
     }
 
-    /// Mensaje de fase (escaneo, plan) en la barra o en stderr.
+    /// Plantilla con la etiqueta del disco HORNEADA y de ancho fijo: todo lo
+    /// que precede a la barra es constante, así la barra nunca se desplaza.
+    /// El nombre del archivo (variable) va al final en {wide_msg}, que indicatif
+    /// trunca si no cabe en la terminal.
+    fn bar_style(label: &str) -> ProgressStyle {
+        // Sanitizar llaves (romperían el template) y fijar ancho con padding.
+        // El color se hornea como ANSI literal: indicatif lo respeta, y Rust no
+        // permite estilos dentro de especificadores de formato.
+        let safe: String = label
+            .chars()
+            .map(|c| if c == '{' || c == '}' { '_' } else { c })
+            .collect();
+        let labeled = format!("\x1b[36;1m{:>8}\x1b[0m ", safe);
+        let template = format!(
+            "{{spinner:.green}} {}[{{bar:30.cyan/blue}}] {{bytes}}/{{total_bytes}} ({{bytes_per_sec}}, ETA {{eta}}) {{wide_msg:.magenta}}",
+            labeled
+        );
+        ProgressStyle::with_template(&template)
+            .unwrap()
+            .progress_chars("█▉▊▋▌▍▎▏  ")
+    }
+
+    /// Mensaje de fase (escaneo, plan): va al spinner.
     fn phase(&self, msg: impl Into<String>) {
-        match &self.bar {
+        match &self.scan {
             Some(bar) => bar.set_message(msg.into()),
             None => {
                 if self.verbose {
@@ -62,41 +98,50 @@ impl Ui {
         }
     }
 
-    /// Prepara la barra para la fase de copia con un total conocido.
-    fn start_copy(&self, total_bytes: u64) {
-        if let Some(bar) = &self.bar {
-            bar.set_length(total_bytes);
-            bar.set_position(0);
-            bar.set_style(
-                ProgressStyle::with_template(
-                    "{spinner:.green} [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, ETA {eta}) {msg}",
-                )
-                .unwrap()
-                .progress_chars("█▉▊▋▌▍▎▏  "),
-            );
+    /// Crea una barra por disco destino, con su total de bytes a escribir.
+    fn start_copy(&mut self, disks: &[PathBuf], totals: &[u64]) {
+        if let Some(multi) = &self.multi {
+            self.scan = None; // el spinner de escaneo termina aquí
+            for (i, total) in totals.iter().enumerate() {
+                if *total == 0 {
+                    continue;
+                }
+                let label = disks[i]
+                    .file_name()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| format!("disco{i}"));
+                let bar = multi.add(ProgressBar::new(*total));
+                bar.set_style(Self::bar_style(&label));
+                self.disk_bars[i] = Some(bar);
+            }
         }
     }
 
-    fn progress(&self, bytes: u64, msg: impl Into<String>) {
-        match &self.bar {
-            Some(bar) => {
+    /// Avanza las barras de los discos destino de esta copia. El archivo
+    /// actual solo se escribe en el {wide_msg} final (truncable), nunca antes
+    /// de la barra: la geometría de la barra es invariante.
+    fn progress(&self, targets: &[usize], bytes: u64, current: &str) {
+        for &i in targets {
+            if let Some(Some(bar)) = self.disk_bars.get(i) {
                 bar.inc(bytes);
-                bar.set_message(msg.into());
+                bar.set_message(current.to_string());
             }
-            None => self.file(msg),
         }
     }
 
     fn finish(&self) {
-        if let Some(bar) = &self.bar {
-            bar.finish_and_clear();
+        if let Some(multi) = &self.multi {
+            for bar in self.disk_bars.iter().flatten() {
+                bar.finish_and_clear();
+            }
+            multi.clear().ok();
         }
     }
 }
 
 pub fn run(disks: &[PathBuf], opts: &Options) -> io::Result<()> {
     let started = Instant::now();
-    let ui = Ui::new(opts.verbose);
+    let mut ui = Ui::new(disks.len(), opts.verbose);
 
     // 1. Cargar manifiestos y escanear.
     let mut manifests = Vec::new();
@@ -125,12 +170,16 @@ pub fn run(disks: &[PathBuf], opts: &Options) -> io::Result<()> {
             Action::RenameConflict { .. } => conflicts += 1,
         }
     }
-    // Bytes a transferir: tamaño acordado × destinos (sin contar renombres,
-    // que no transfieren contenido).
+    // Bytes a transferir por disco destino: tamaño acordado sumado a cada `to`
+    // (sin contar renombres, que no transfieren contenido).
+    let mut disk_totals = vec![0u64; disks.len()];
     for a in &result.actions {
         if let Action::Copy { path, to, .. } = a {
             if let Some(e) = result.agreed.get(path) {
                 plan_bytes += e.size * to.len() as u64;
+                for &i in to {
+                    disk_totals[i] += e.size;
+                }
             }
         }
     }
@@ -140,6 +189,15 @@ pub fn run(disks: &[PathBuf], opts: &Options) -> io::Result<()> {
         fmt_bytes(plan_bytes),
         result.agreed.len()
     );
+    let desglose: Vec<String> = disks
+        .iter()
+        .zip(&disk_totals)
+        .filter(|(_, b)| **b > 0)
+        .map(|(d, b)| format!("{}: {}", d.display(), fmt_bytes(*b)))
+        .collect();
+    if !desglose.is_empty() {
+        println!("  por disco: {}", desglose.join(" · "));
+    }
 
     if opts.dry_run {
         for a in &result.actions {
@@ -150,7 +208,7 @@ pub fn run(disks: &[PathBuf], opts: &Options) -> io::Result<()> {
     }
 
     if copies > 0 {
-        ui.start_copy(plan_bytes);
+        ui.start_copy(disks, &disk_totals);
     }
 
     // 3. Ejecutar acciones.
@@ -167,7 +225,7 @@ pub fn run(disks: &[PathBuf], opts: &Options) -> io::Result<()> {
                     .expect("toda copia tiene entrada acordada")
                     .clone();
                 ui.file(format!("copiando {} -> {} disco(s)", path.display(), to.len()));
-                copy_one(&src, &targets, &entry, &ui)?;
+                copy_one(&src, &to, &targets, &entry, &ui)?;
                 copied_bytes += entry.size * to.len() as u64;
                 copied_files += to.len();
             }
@@ -217,7 +275,13 @@ pub fn run(disks: &[PathBuf], opts: &Options) -> io::Result<()> {
 
 /// Lee el origen una vez y escribe a todos los destinos en el mismo bucle.
 /// Preserva mtime y hace fsync por archivo.
-fn copy_one(src: &std::path::Path, targets: &[PathBuf], entry: &FileEntry, ui: &Ui) -> io::Result<()> {
+fn copy_one(
+    src: &std::path::Path,
+    targets_idx: &[usize],
+    targets: &[PathBuf],
+    entry: &FileEntry,
+    ui: &Ui,
+) -> io::Result<()> {
     let mut input = File::open(src)?;
 
     let mut outputs: Vec<File> = Vec::with_capacity(targets.len());
@@ -237,7 +301,11 @@ fn copy_one(src: &std::path::Path, targets: &[PathBuf], entry: &FileEntry, ui: &
         for o in &mut outputs {
             o.write_all(&buf[..n])?;
         }
-        ui.progress(n as u64, src.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default());
+        let current = src
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        ui.progress(targets_idx, n as u64, &current);
     }
 
     for (o, t) in outputs.into_iter().zip(targets) {
