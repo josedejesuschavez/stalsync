@@ -67,6 +67,32 @@ stalsync sync ~/hdd1 ~/hdd2 ~/hdd3 --dry-run
 
 # Detalle por archivo (log scrolleable)
 stalsync sync ~/hdd1 ~/hdd2 ~/hdd3 -v
+
+# Diagnóstico de desfase (solo lectura, no toca nada)
+stalsync status ~/hdd1 ~/hdd2 ~/hdd3
+
+# Reconstruir/actualizar manifiestos desde el contenido real
+stalsync refresh ~/hdd1 ~/hdd2 ~/hdd3 --yes
+```
+
+### `status`: ¿están al día los discos?
+
+Ejecuta el mismo análisis que un sync (scan + merge) pero **sin modificar
+nada**. Reporta por disco los cambios locales sin propagar, lo que recibirá,
+environará o perderá, y los conflictos. Exit code scriptable: `0` = convergido,
+`1` = hay desfase (usable en cron o scripts de monitoreo).
+
+```
+✔ todo sincronizado — 3 discos, 31202 rutas gestionadas, nada pendiente
+```
+
+```
+⚠ 2 disco(s) desfasado(s) — 4 transferencias pendientes (340.0 MiB), 31202 rutas gestionadas
+
+disco      locales (altas/bajas)   envía   recibe              perderá   conflictos
+hdd1       2/0 (340.0 MiB)             2       0                   0         0  ⚠
+hdd2       0                           0       2 (340.0 MiB)     0         0  ⚠
+hdd3       0                           0       0                   0         0  ✔
 ```
 
 La salida de progreso se adapta al contexto, como rsync/rclone/cargo:
@@ -86,6 +112,23 @@ plan: 138 copias (54.0 MiB), 0 borrados, 0 conflictos, 69 rutas en estado acorda
 
 Los conflictos se anuncian siempre al final (aunque no haya TTY), con la lista
 de versiones perdedoras conservadas.
+
+### `refresh`: reescribir manifiestos desde la realidad actual
+
+Re-escanea cada disco y reescribe su manifiesto (`.stalsync/manifest.jsonl`)
+para que refleje el contenido actual, **sin copiar ni borrar archivos**.
+Sirve para reconstruir manifiestos perdidos, materializar hashes tras copias
+manuales con `cp`, o re-baselinear tras resolver conflictos a mano.
+
+> ⚠ **Semántica**: refresh hace que los cambios pendientes de propagar se
+> olviden. Un borrado pendiente hará que el archivo vuelva a copiarse desde
+> los discos que aún lo tienen; una modificación pendiente puede revertirse
+> por la regla de mayoría. Por eso pide confirmación (o `--yes`).
+
+```
+✔ manifiestos actualizados a la realidad actual:
+  hdd1       31202 entradas (31000 intactas, 202 actualizadas, 0 eliminadas del manifiesto)
+```
 
 El flujo de trabajo habitual: editas/borras archivos en cualquiera de los
 discos y vuelves a ejecutar el comando. Los re-syncs sin cambios no copian
@@ -144,6 +187,7 @@ cargo test --test resilience     # batería 3: invariantes y recuperación
 
 | Batería | Cubre |
 |---|---|
+| `status` (6) | Comando status: convergencia, disco atrasado, cambios/borrados locales, conflictos, que no toca nada |
 | `merge_states` (10) | Tabla de estados del merge: propagación, borrados, conflictos, resucitación, regresión Clean-vs-Changed |
 | `sync_e2e` (8) | Primer sync, idempotencia, propagación desde cualquier disco, mtime-only sin copia, conflicto end-to-end, disco nuevo |
 | `resilience` (7) | Manifiesto borrado/corrupto, atomicidad, disco desconectado, convergencia desde caos, estabilidad tras conflicto |
