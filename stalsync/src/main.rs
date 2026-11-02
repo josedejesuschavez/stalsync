@@ -1,16 +1,63 @@
 use std::io::IsTerminal;
 use std::path::PathBuf;
 
-fn usage() {
-    eprintln!("uso:");
-    eprintln!("  stalsync sync <disco1> <disco2> [discoN...] [--dry-run] [-v|--verbose] [--trash-days N]");
-    eprintln!("  stalsync status <disco1> <disco2> [discoN...]");
-    eprintln!("  stalsync refresh <disco1> <disco2> [discoN...] [--yes]");
+use clap::{Parser, Subcommand};
+
+#[derive(Parser)]
+#[command(
+    name = "stalsync",
+    version,
+    about = "Sincronización N-way de discos locales (sin maestro)",
+    disable_help_subcommand = true
+)]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Sincroniza los discos para que converjan al mismo contenido
+    Sync {
+        /// Discos a sincronizar (mínimo 2)
+        #[arg(required = true)]
+        disks: Vec<PathBuf>,
+
+        /// Muestra el plan sin modificar nada
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Detalle por archivo (log scrolleable)
+        #[arg(short, long)]
+        verbose: bool,
+
+        /// Días de retención de la papelera (0 = desactivada)
+        #[arg(long, default_value_t = stalsync::trash::retention_default())]
+        trash_days: u64,
+    },
+
+    /// Diagnóstico de desfase entre discos, solo lectura
+    Status {
+        /// Discos a comparar (mínimo 2)
+        #[arg(required = true)]
+        disks: Vec<PathBuf>,
+    },
+
+    /// Reescribe los manifiestos desde la realidad actual (olvida cambios pendientes)
+    Refresh {
+        /// Discos a rebaselinear (mínimo 2)
+        #[arg(required = true)]
+        disks: Vec<PathBuf>,
+
+        /// No pide confirmación interactiva
+        #[arg(short, long)]
+        yes: bool,
+    },
 }
 
 /// Confirma una operación destructiva. Con --yes o stdin no interactivo, no pregunta.
-fn confirm(args: &[String], warning: &str) -> bool {
-    if args.iter().any(|a| a == "--yes" || a == "-y") {
+fn confirm(yes: bool, warning: &str) -> bool {
+    if yes {
         return true;
     }
     if !std::io::stdin().is_terminal() {
@@ -29,53 +76,44 @@ fn confirm(args: &[String], warning: &str) -> bool {
     matches!(line.trim().to_lowercase().as_str(), "s" | "si" | "sí" | "y" | "yes")
 }
 
-fn disks_from(args: &[String]) -> Vec<PathBuf> {
-    args.iter()
-        .filter(|a| !a.starts_with('-'))
-        .map(PathBuf::from)
-        .collect()
-}
-
-fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    let Some(cmd) = args.first().map(String::as_str) else {
-        usage();
-        std::process::exit(2);
-    };
-
-    let disks = disks_from(&args[1..]);
+fn validate_disks(disks: &[PathBuf]) {
     if disks.len() < 2 {
         eprintln!("error: se necesitan al menos 2 discos");
-        usage();
         std::process::exit(2);
     }
-    for d in &disks {
+    for d in disks {
         if !d.is_dir() {
             eprintln!("error: {} no existe o no es un directorio", d.display());
             std::process::exit(1);
         }
     }
+}
 
-    match cmd {
-        "sync" => {
+fn main() {
+    let cli = Cli::parse();
+
+    match cli.command {
+        Commands::Sync {
+            disks,
+            dry_run,
+            verbose,
+            trash_days,
+        } => {
+            validate_disks(&disks);
             let opts = stalsync::sync::Options {
-                dry_run: args.iter().any(|a| a == "--dry-run"),
-                verbose: args.iter().any(|a| a == "-v" || a == "--verbose"),
-                trash_days: args
-                    .iter()
-                    .position(|a| a == "--trash-days")
-                    .and_then(|i| args.get(i + 1))
-                    .and_then(|v| v.parse().ok())
-                    .unwrap_or_else(stalsync::trash::retention_default),
+                dry_run,
+                verbose,
+                trash_days,
             };
             if let Err(e) = stalsync::sync::run(&disks, &opts) {
                 eprintln!("error: {e}");
                 std::process::exit(1);
             }
         }
-        "refresh" => {
+        Commands::Refresh { disks, yes } => {
+            validate_disks(&disks);
             if !confirm(
-                &args,
+                yes,
                 "⚠ refresh re-baselinea cada disco a su contenido actual: \
                  los cambios pendientes de propagar se olvidan \
                  (un borrado pendiente hará que el archivo vuelva; \
@@ -91,7 +129,8 @@ fn main() {
                 }
             }
         }
-        "status" => {
+        Commands::Status { disks } => {
+            validate_disks(&disks);
             match stalsync::status::compute_status(&disks) {
                 Ok(report) => {
                     print!("{}", stalsync::status::render(&report));
@@ -103,10 +142,6 @@ fn main() {
                     std::process::exit(1);
                 }
             }
-        }
-        _ => {
-            usage();
-            std::process::exit(2);
         }
     }
 }
