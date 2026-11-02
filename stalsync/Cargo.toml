@@ -22,6 +22,7 @@ serde_json = "1.0.154"
 walkdir = "2.5.0"
 
 [dev-dependencies]
+assert_cmd = "2"
 blake3 = "1.8.7"
 filetime = "0.2.29"
 tempfile = "3.27.0"
