@@ -1,9 +1,32 @@
+use std::io::IsTerminal;
 use std::path::PathBuf;
 
 fn usage() {
     eprintln!("uso:");
     eprintln!("  stalsync sync <disco1> <disco2> [discoN...] [--dry-run] [-v|--verbose]");
     eprintln!("  stalsync status <disco1> <disco2> [discoN...]");
+    eprintln!("  stalsync refresh <disco1> <disco2> [discoN...] [--yes]");
+}
+
+/// Confirma una operación destructiva. Con --yes o stdin no interactivo, no pregunta.
+fn confirm(args: &[String], warning: &str) -> bool {
+    if args.iter().any(|a| a == "--yes" || a == "-y") {
+        return true;
+    }
+    if !std::io::stdin().is_terminal() {
+        eprintln!("{warning}");
+        eprintln!("error: stdin no interactivo; confirma con --yes");
+        return false;
+    }
+    eprintln!("{warning}");
+    eprint!("¿continuar? [s/N]: ");
+    use std::io::Write as _;
+    let _ = std::io::stderr().flush();
+    let mut line = String::new();
+    if std::io::stdin().read_line(&mut line).is_err() {
+        return false;
+    }
+    matches!(line.trim().to_lowercase().as_str(), "s" | "si" | "sí" | "y" | "yes")
 }
 
 fn disks_from(args: &[String]) -> Vec<PathBuf> {
@@ -42,6 +65,24 @@ fn main() {
             if let Err(e) = stalsync::sync::run(&disks, &opts) {
                 eprintln!("error: {e}");
                 std::process::exit(1);
+            }
+        }
+        "refresh" => {
+            if !confirm(
+                &args,
+                "⚠ refresh re-baselinea cada disco a su contenido actual: \
+                 los cambios pendientes de propagar se olvidan \
+                 (un borrado pendiente hará que el archivo vuelva; \
+                 una modificación pendiente puede revertirse por mayoría).",
+            ) {
+                std::process::exit(1);
+            }
+            match stalsync::refresh::refresh(&disks) {
+                Ok(reports) => print!("{}", stalsync::refresh::render(&reports)),
+                Err(e) => {
+                    eprintln!("error: {e}");
+                    std::process::exit(1);
+                }
             }
         }
         "status" => {

@@ -6,6 +6,7 @@
 
 pub mod manifest;
 pub mod merge;
+pub mod refresh;
 pub mod scan;
 pub mod status;
 pub mod sync;
