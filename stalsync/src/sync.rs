@@ -327,7 +327,7 @@ fn copy_one(
     Ok(())
 }
 
-fn fmt_bytes(n: u64) -> String {
+pub fn fmt_bytes(n: u64) -> String {
     const UNITS: [&str; 5] = ["B", "KiB", "MiB", "GiB", "TiB"];
     let mut v = n as f64;
     let mut u = 0;
