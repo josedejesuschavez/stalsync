@@ -4,6 +4,7 @@
 //! (tests/merge_states.rs, tests/sync_e2e.rs, tests/resilience.rs).
 //! Cada test protege una decisión de diseño y documenta su porqué.
 
+pub mod lock;
 pub mod manifest;
 pub mod merge;
 pub mod refresh;

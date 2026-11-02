@@ -32,6 +32,9 @@ pub struct DiskRefresh {
 }
 
 pub fn refresh(disks: &[PathBuf]) -> io::Result<Vec<DiskRefresh>> {
+    // Mismo lock que sync: refresh reescribe manifiestos y no debe
+    // entrelazarse con un sync sobre los mismos discos.
+    let _locks = crate::lock::acquire_all(disks)?;
     let mut reports = Vec::new();
     for disk in disks {
         eprintln!("re-escaneando {}...", disk.display());

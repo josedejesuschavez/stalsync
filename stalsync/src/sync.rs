@@ -153,6 +153,10 @@ impl Ui {
 
 pub fn run(disks: &[PathBuf], opts: &Options) -> io::Result<()> {
     let started = Instant::now();
+    // Exclusión entre procesos: dos syncs simultáneos sobre los mismos
+    // discos intercalarían copias/borrados y manifiestos. El guard se
+    // mantiene vivo hasta el final de la función.
+    let _locks = crate::lock::acquire_all(disks)?;
     let mut ui = Ui::new(disks.len(), opts.verbose);
 
     // Retención de papeleras: antes de nada, purgar entradas viejas.
