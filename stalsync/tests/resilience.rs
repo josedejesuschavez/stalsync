@@ -75,7 +75,7 @@ fn disco_desconectado_converge_al_reincorporarse() {
     // d2 "desconectado": sync solo de d1 y d3
     let dos = vec![d.paths[0].clone(), d.paths[2].clone()];
     d.write(0, "a.txt", "v2");
-    stalsync::sync::run(&dos, false).unwrap();
+    stalsync::sync::run(&dos, &stalsync::sync::Options { dry_run: false, verbose: false }).unwrap();
 
     // d2 vuelve con su manifiesto viejo: debe recibir v2 y seguir teniendo b.txt
     d.sync();

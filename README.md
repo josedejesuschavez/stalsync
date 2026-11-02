@@ -64,14 +64,26 @@ stalsync sync ~/hdd1 ~/hdd2 ~/hdd3
 
 # Ver el plan sin ejecutar nada
 stalsync sync ~/hdd1 ~/hdd2 ~/hdd3 --dry-run
+
+# Detalle por archivo (log scrolleable)
+stalsync sync ~/hdd1 ~/hdd2 ~/hdd3 -v
 ```
 
-Salida típica:
+La salida de progreso se adapta al contexto, como rsync/rclone/cargo:
+
+- **Terminal interactiva**: spinner de escaneo y barra de progreso con
+  bytes, velocidad y ETA, redibujada en una sola línea.
+- **Pipe o CI (sin TTY)**: silenciosa durante la pasada; solo el plan y el
+  resumen final, aptos para logs.
+- **`-v`/`--verbose`**: una línea por archivo, independientemente del TTY.
 
 ```
-plan: 138 copias, 0 borrados, 0 conflictos, 69 rutas en estado acordado
-sincronización completa
+plan: 138 copias (27.0 MiB), 0 borrados, 0 conflictos, 69 rutas en estado acordado
+✔ completo en 0.9s — 138 archivos copiados (27.0 MiB), 0 borrados, 0 conflictos
 ```
+
+Los conflictos se anuncian siempre al final (aunque no haya TTY), con la lista
+de versiones perdedoras conservadas.
 
 El flujo de trabajo habitual: editas/borras archivos en cualquiera de los
 discos y vuelves a ejecutar el comando. Los re-syncs sin cambios no copian
