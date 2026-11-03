@@ -61,12 +61,13 @@ pub struct StatusReport {
 
 /// Escanea y mergea sin tocar nada. Es el mismo análisis que `sync` ejecuta.
 pub fn compute_status(disks: &[PathBuf]) -> io::Result<StatusReport> {
-    let mut scans = Vec::new();
+    let mut manifests = Vec::with_capacity(disks.len());
     for disk in disks {
         eprintln!("escaneando {}...", disk.display());
-        let m = manifest::load(disk).ctx(|| format!("leyendo manifiesto de {}", disk.display()))?;
-        scans.push(scan::scan_disk(disk, &m).ctx(|| format!("escaneando {}", disk.display()))?);
+        manifests.push(manifest::load(disk).ctx(|| format!("leyendo manifiesto de {}", disk.display()))?);
     }
+    let scans = scan::scan_all(disks, &manifests, |_, _, _| {})
+        .ctx(|| "escaneando discos".to_string())?;
     let result = merge::merge(disks, &scans);
 
     let mut dss: Vec<DiskStatus> = disks

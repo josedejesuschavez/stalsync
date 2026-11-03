@@ -251,8 +251,9 @@ stalsync/
 
 - **Renames**: un archivo movido se trata como borrado + nuevo (recopia).
   Detección por `(size, hash)` planificada.
-- **Escaneo y hashing secuenciales**: paralelización con `rayon` para árboles
-  grandes.
+- **Hashing secuencial dentro de un disco**: el escaneo ya es paralelo entre
+  discos (un hilo por disco); paralelizar el hash dentro de un mismo disco
+  (p. ej. `rayon`) queda pendiente.
 - **Symlinks, hardlinks, xattrs, sparse files**: no gestionados (se ignoran).
 - **`io_uring`** para árboles con muchos archivos pequeños.
 - **exFAT/FAT32**: fuera de soporte por mtime de 2s.

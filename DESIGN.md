@@ -63,7 +63,8 @@ stalsync sync <disco1> <disco2> [discoN...] [--dry-run]
 
 ## Fases futuras (no implementado aún)
 - Detección de rename/move por (size, hash) para evitar recopias.
-- Paralelización del escaneo y hashing (rayon).
+- Paralelización del hashing dentro de un disco (rayon); el escaneo ya es
+  paralelo entre discos (un hilo por disco).
 - io_uring para árboles con muchos archivos pequeños.
 - Verificación post-copia por hash completo.
 - Borrado de directorios vacíos tras eliminar archivos.

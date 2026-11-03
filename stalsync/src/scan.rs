@@ -67,6 +67,49 @@ pub fn scan_disk(
     scan_disk_with_progress(disk, manifest, |_, _| {})
 }
 
+/// Escanea varios discos en paralelo (un hilo por disco) y devuelve los
+/// estados en el orden de `disks`. `progress(i, n_archivos, bytes)` se
+/// invoca desde el hilo de cada disco, con el índice del disco.
+///
+/// La paralelización es ENTRE discos: al ser dispositivos físicos distintos
+/// el I/O es realmente concurrente, así el tiempo total es el del disco más
+/// lento en vez de la suma de todos. Dentro de cada disco el hash se mantiene
+/// secuencial a propósito: varios lectores sobre el mismo HDD con archivos
+/// grandes solo provocan seeks y pueden ir más lento que un único lector.
+pub fn scan_all(
+    disks: &[PathBuf],
+    manifests: &[HashMap<PathBuf, FileEntry>],
+    progress: impl Fn(usize, usize, u64) + Sync,
+) -> io::Result<Vec<HashMap<PathBuf, State>>> {
+    let progress = &progress;
+    let mut results: Vec<Option<HashMap<PathBuf, State>>> =
+        (0..disks.len()).map(|_| None).collect();
+    let inner: io::Result<()> = std::thread::scope(|s| {
+        let mut handles = Vec::with_capacity(disks.len());
+        for (i, (disk, manifest)) in disks.iter().zip(manifests.iter()).enumerate() {
+            handles.push(s.spawn(move || {
+                let states =
+                    scan_disk_with_progress(disk, manifest, |n, bytes| progress(i, n, bytes))?;
+                io::Result::Ok((i, states))
+            }));
+        }
+        for handle in handles {
+            // join Err = panic del hilo de escaneo: propagarlo como error
+            // en vez de perder ese disco silenciosamente.
+            let (i, states) = handle
+                .join()
+                .map_err(|_| io::Error::other("hilo de escaneo panicó"))??;
+            results[i] = Some(states);
+        }
+        Ok(())
+    });
+    inner?;
+    Ok(results
+        .into_iter()
+        .map(|r| r.expect("todo disco escaneado"))
+        .collect())
+}
+
 /// Igual que `scan_disk`, pero invoca `progress(n_archivos, bytes)` por cada
 /// archivo procesado. Sirve para mostrar avance en el spinner: el primer
 /// sync de un disco grande hashea todo el árbol y sin contador parece

@@ -13,6 +13,7 @@ use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::fs::{self, File};
 use std::io::{self, IsTerminal, Read, Write};
 use std::path::PathBuf;
+use std::sync::Mutex;
 use std::time::Instant;
 
 const COPY_BUF: usize = 256 * 1024;
@@ -38,13 +39,22 @@ impl Default for Options {
     }
 }
 
+/// Estado del spinner de escaneo: totales por disco y el último punto
+/// redibujado (para el throttle). Vive detrás de un Mutex porque el
+/// escaneo de cada disco corre en su propio hilo.
+struct ScanState {
+    per_disk: Vec<(usize, u64)>,
+    /// Último (archivos, bytes) con el que se redibujó el spinner.
+    drawn: (usize, u64),
+}
+
 /// Salida de progreso: spinner de escaneo + una barra por disco destino
 /// (MultiProgress), o log por línea en verbose. Sin TTY: silencioso.
 struct Ui {
     multi: Option<MultiProgress>,
     scan: Option<ProgressBar>,
-    /// Bytes mostrados en la última actualización del spinner (throttle).
-    scan_bytes: u64,
+    /// Totales de escaneo por disco; los hilos de escaneo lo actualizan.
+    scan_state: Mutex<ScanState>,
     /// Barras por índice de disco; solo los discos destino de copias tienen barra.
     disk_bars: Vec<Option<ProgressBar>>,
     verbose: bool,
@@ -63,7 +73,10 @@ impl Ui {
             Ui {
                 multi: Some(multi),
                 scan: Some(scan),
-                scan_bytes: 0,
+                scan_state: Mutex::new(ScanState {
+                    per_disk: vec![(0, 0); n_disks],
+                    drawn: (0, 0),
+                }),
                 disk_bars: vec![None; n_disks],
                 verbose,
             }
@@ -71,7 +84,10 @@ impl Ui {
             Ui {
                 multi: None,
                 scan: None,
-                scan_bytes: 0,
+                scan_state: Mutex::new(ScanState {
+                    per_disk: vec![(0, 0); n_disks],
+                    drawn: (0, 0),
+                }),
                 disk_bars: Vec::new(),
                 verbose,
             }
@@ -112,23 +128,28 @@ impl Ui {
         }
     }
 
-    /// Actualiza el spinner de escaneo con archivos y bytes procesados.
-    /// Redibuja cada 32 archivos O cada 512 MiB acumulados (lo que primero
-    /// ocurra): redibujar por archivo cuesta más que el stat en algunos
-    /// TTY, y con pocos archivos enormes el conteo de archivos solo nunca
-    /// dispararía la actualización.
-    fn scan_progress(&mut self, disk: &str, n: usize, bytes: u64) {
+    /// Guarda los totales del disco `i` y redibuja el spinner con el
+    /// agregado de todos los discos. Se invoca desde el hilo de escaneo
+    /// de cada disco. Redibuja cada 32 archivos O cada 512 MiB acumulados
+    /// (lo que primero ocurra): redibujar por archivo cuesta más que el
+    /// stat en algunos TTY, y con pocos archivos enormes el conteo de
+    /// archivos solo nunca dispararía la actualización.
+    fn scan_progress(&self, i: usize, n: usize, bytes: u64) {
         const CADA_BYTES: u64 = 512 * 1024 * 1024;
-        let toca_por_archivos = n % 32 == 0;
-        let toca_por_bytes = bytes.saturating_sub(self.scan_bytes) >= CADA_BYTES;
-        if !toca_por_archivos && !toca_por_bytes {
+        let mut st = self.scan_state.lock().unwrap();
+        st.per_disk[i] = (n, bytes);
+        let files: usize = st.per_disk.iter().map(|t| t.0).sum();
+        let done: u64 = st.per_disk.iter().map(|t| t.1).sum();
+        if files - st.drawn.0 < 32 && done.saturating_sub(st.drawn.1) < CADA_BYTES {
             return;
         }
-        self.scan_bytes = bytes;
+        st.drawn = (files, done);
+        let n_disks = st.per_disk.len();
+        drop(st);
         if let Some(bar) = &self.scan {
             bar.set_message(format!(
-                "escaneando {disk}... ({n} archivos, {} escaneados)",
-                crate::sync::fmt_bytes(bytes)
+                "escaneando {n_disks} discos en paralelo... ({files} archivos, {} escaneados)",
+                fmt_bytes(done)
             ));
         }
     }
@@ -199,22 +220,22 @@ pub fn run(disks: &[PathBuf], opts: &Options) -> io::Result<()> {
         }
     }
 
-    // 1. Cargar manifiestos y escanear.
-    let mut manifests = Vec::new();
-    let mut scans = Vec::new();
+    // 1. Cargar manifiestos y escanear. Los manifiestos son una lectura
+    // rápida (un archivo por disco) y van secuenciales; el escaneo, que es
+    // lo costoso, corre en paralelo con un hilo por disco: son dispositivos
+    // físicos distintos y el I/O concurrente entre ellos es real, así el
+    // tiempo total pasa de la suma de discos al disco más lento.
+    let mut manifests = Vec::with_capacity(disks.len());
     for disk in disks {
-        let manifest =
-            manifest::load(disk).ctx(|| format!("leyendo manifiesto de {}", disk.display()))?;
-        ui.phase(format!("escaneando {}...", disk.display()));
-        let disk_label = disk.display().to_string();
-        scans.push(
-            scan::scan_disk_with_progress(disk, &manifest, |n, bytes| {
-                ui.scan_progress(&disk_label, n, bytes);
-            })
-            .ctx(|| format!("escaneando {}", disk.display()))?,
+        manifests.push(
+            manifest::load(disk).ctx(|| format!("leyendo manifiesto de {}", disk.display()))?,
         );
-        manifests.push(manifest);
     }
+    ui.phase(format!("escaneando {} discos en paralelo...", disks.len()));
+    let scans = scan::scan_all(disks, &manifests, |i, n, bytes| {
+        ui.scan_progress(i, n, bytes);
+    })
+    .ctx(|| "escaneando discos".to_string())?;
 
     // 2. Merge N-way.
     let result = merge::merge(disks, &scans);

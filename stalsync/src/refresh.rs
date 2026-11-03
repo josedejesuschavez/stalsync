@@ -36,13 +36,22 @@ pub fn refresh(disks: &[PathBuf]) -> io::Result<Vec<DiskRefresh>> {
     // Mismo lock que sync: refresh reescribe manifiestos y no debe
     // entrelazarse con un sync sobre los mismos discos.
     let _locks = crate::lock::acquire_all(disks)?;
-    let mut reports = Vec::new();
+    // Manifiestos primero (lectura rápida) y escaneo en paralelo, un hilo
+    // por disco (mismo razonamiento que en sync: I/O real entre dispositivos).
+    let mut olds = Vec::with_capacity(disks.len());
     for disk in disks {
         eprintln!("re-escaneando {}...", disk.display());
-        let old =
-            manifest::load(disk).ctx(|| format!("leyendo manifiesto de {}", disk.display()))?;
-        let states =
-            scan::scan_disk(disk, &old).ctx(|| format!("escaneando {}", disk.display()))?;
+        olds.push(
+            manifest::load(disk).ctx(|| format!("leyendo manifiesto de {}", disk.display()))?,
+        );
+    }
+    let scans = scan::scan_all(disks, &olds, |_, _, _| {})
+        .ctx(|| "re-escaneando discos".to_string())?;
+
+    let mut reports = Vec::new();
+    for (i, disk) in disks.iter().enumerate() {
+        let old = &olds[i];
+        let states = &scans[i];
 
         // El nuevo manifiesto ES el contenido actual del disco.
         let mut rebuilt: HashMap<PathBuf, FileEntry> = HashMap::new();
@@ -53,7 +62,7 @@ pub fn refresh(disks: &[PathBuf]) -> io::Result<Vec<DiskRefresh>> {
                 .unwrap_or_else(|| disk.display().to_string()),
             ..Default::default()
         };
-        for (path, state) in &states {
+        for (path, state) in states {
             let e = match state {
                 State::Clean(e) | State::Changed(e) => e,
                 State::Deleted => continue, // no existe: su entrada sale del manifiesto
