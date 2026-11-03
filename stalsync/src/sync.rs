@@ -108,6 +108,18 @@ impl Ui {
         }
     }
 
+    /// Actualiza el spinner de escaneo con el conteo de archivos. Redibuja
+    /// solo cada 32 archivos: redibujar por archivo en un árbol grande
+    /// cuesta más que el propio stat en algunos TTY.
+    fn scan_progress(&mut self, disk: &str, n: usize) {
+        if n % 32 != 0 {
+            return;
+        }
+        if let Some(bar) = &self.scan {
+            bar.set_message(format!("escaneando {disk}... ({n} archivos)"));
+        }
+    }
+
     /// Detalle por archivo: línea de log solo en verbose.
     fn file(&self, msg: impl Into<String>) {
         if self.verbose {
@@ -181,8 +193,12 @@ pub fn run(disks: &[PathBuf], opts: &Options) -> io::Result<()> {
         let manifest =
             manifest::load(disk).ctx(|| format!("leyendo manifiesto de {}", disk.display()))?;
         ui.phase(format!("escaneando {}...", disk.display()));
+        let disk_label = disk.display().to_string();
         scans.push(
-            scan::scan_disk(disk, &manifest).ctx(|| format!("escaneando {}", disk.display()))?,
+            scan::scan_disk_with_progress(disk, &manifest, |n| {
+                ui.scan_progress(&disk_label, n);
+            })
+            .ctx(|| format!("escaneando {}", disk.display()))?,
         );
         manifests.push(manifest);
     }

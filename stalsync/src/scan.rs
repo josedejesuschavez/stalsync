@@ -64,8 +64,21 @@ pub fn scan_disk(
     disk: &Path,
     manifest: &HashMap<PathBuf, FileEntry>,
 ) -> io::Result<HashMap<PathBuf, State>> {
+    scan_disk_with_progress(disk, manifest, |_| {})
+}
+
+/// Igual que `scan_disk`, pero invoca `progress(n)` por cada archivo
+/// procesado (n = archivos llevados). Sirve para mostrar avance en el
+/// spinner: el primer sync de un disco grande hashea todo el árbol y sin
+/// contador parece colgado.
+pub fn scan_disk_with_progress(
+    disk: &Path,
+    manifest: &HashMap<PathBuf, FileEntry>,
+    mut progress: impl FnMut(usize),
+) -> io::Result<HashMap<PathBuf, State>> {
     let mut states = HashMap::new();
     let mut seen: HashSet<PathBuf> = HashSet::new();
+    let mut n_files = 0usize;
 
     let walker = WalkDir::new(disk)
         .follow_links(false)
@@ -143,6 +156,8 @@ pub fn scan_disk(
         };
         seen.insert(rel.clone());
         states.insert(rel, state);
+        n_files += 1;
+        progress(n_files);
     }
 
     // En el manifiesto pero no en disco: borrado.
