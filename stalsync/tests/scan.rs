@@ -13,9 +13,18 @@ fn progreso_reporta_cada_archivo() {
     }
     let manifest = stalsync::manifest::load(&d.paths[0]).unwrap();
 
-    let mut ultimo = 0;
-    stalsync::scan::scan_disk_with_progress(&d.paths[0], &manifest, |n| ultimo = n).unwrap();
-    assert_eq!(ultimo, 10, "el conteo final debe ser el número de archivos");
+    let mut ultimo_n = 0;
+    let mut ultimos_bytes = 0;
+    stalsync::scan::scan_disk_with_progress(&d.paths[0], &manifest, |n, b| {
+        ultimo_n = n;
+        ultimos_bytes = b;
+    })
+    .unwrap();
+    assert_eq!(
+        ultimo_n, 10,
+        "el conteo final debe ser el número de archivos"
+    );
+    assert_eq!(ultimos_bytes, 10, "10 archivos de 1 byte = 10 bytes");
 }
 
 #[test]
@@ -26,7 +35,7 @@ fn progreso_va_en_orden_ascendente() {
     let manifest = stalsync::manifest::load(&d.paths[0]).unwrap();
 
     let mut visto = Vec::new();
-    stalsync::scan::scan_disk_with_progress(&d.paths[0], &manifest, |n| visto.push(n)).unwrap();
+    stalsync::scan::scan_disk_with_progress(&d.paths[0], &manifest, |n, _| visto.push(n)).unwrap();
     let mut ordenado = visto.clone();
     ordenado.sort();
     assert_eq!(visto, ordenado, "los conteos deben ser 1,2,3... en orden");
@@ -39,7 +48,7 @@ fn scan_disk_clasico_sigue_igual() {
     d.write(0, "a.txt", "a");
     let manifest = stalsync::manifest::load(&d.paths[0]).unwrap();
 
-    let con = stalsync::scan::scan_disk_with_progress(&d.paths[0], &manifest, |_| {}).unwrap();
+    let con = stalsync::scan::scan_disk_with_progress(&d.paths[0], &manifest, |_, _| {}).unwrap();
     let sin = stalsync::scan::scan_disk(&d.paths[0], &manifest).unwrap();
     assert_eq!(con, sin);
 }

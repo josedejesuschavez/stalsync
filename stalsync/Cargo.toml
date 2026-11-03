@@ -1,6 +1,6 @@
 [package]
 name = "stalsync"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2024"
 description = "Sincronización N-way de discos locales: sin maestro, conflictos por mtime, papelera de borrados"
 license = "MIT"

@@ -43,6 +43,8 @@ impl Default for Options {
 struct Ui {
     multi: Option<MultiProgress>,
     scan: Option<ProgressBar>,
+    /// Bytes mostrados en la última actualización del spinner (throttle).
+    scan_bytes: u64,
     /// Barras por índice de disco; solo los discos destino de copias tienen barra.
     disk_bars: Vec<Option<ProgressBar>>,
     verbose: bool,
@@ -61,6 +63,7 @@ impl Ui {
             Ui {
                 multi: Some(multi),
                 scan: Some(scan),
+                scan_bytes: 0,
                 disk_bars: vec![None; n_disks],
                 verbose,
             }
@@ -68,6 +71,7 @@ impl Ui {
             Ui {
                 multi: None,
                 scan: None,
+                scan_bytes: 0,
                 disk_bars: Vec::new(),
                 verbose,
             }
@@ -108,15 +112,24 @@ impl Ui {
         }
     }
 
-    /// Actualiza el spinner de escaneo con el conteo de archivos. Redibuja
-    /// solo cada 32 archivos: redibujar por archivo en un árbol grande
-    /// cuesta más que el propio stat en algunos TTY.
-    fn scan_progress(&mut self, disk: &str, n: usize) {
-        if n % 32 != 0 {
+    /// Actualiza el spinner de escaneo con archivos y bytes procesados.
+    /// Redibuja cada 32 archivos O cada 512 MiB acumulados (lo que primero
+    /// ocurra): redibujar por archivo cuesta más que el stat en algunos
+    /// TTY, y con pocos archivos enormes el conteo de archivos solo nunca
+    /// dispararía la actualización.
+    fn scan_progress(&mut self, disk: &str, n: usize, bytes: u64) {
+        const CADA_BYTES: u64 = 512 * 1024 * 1024;
+        let toca_por_archivos = n % 32 == 0;
+        let toca_por_bytes = bytes.saturating_sub(self.scan_bytes) >= CADA_BYTES;
+        if !toca_por_archivos && !toca_por_bytes {
             return;
         }
+        self.scan_bytes = bytes;
         if let Some(bar) = &self.scan {
-            bar.set_message(format!("escaneando {disk}... ({n} archivos)"));
+            bar.set_message(format!(
+                "escaneando {disk}... ({n} archivos, {} escaneados)",
+                crate::sync::fmt_bytes(bytes)
+            ));
         }
     }
 
@@ -195,8 +208,8 @@ pub fn run(disks: &[PathBuf], opts: &Options) -> io::Result<()> {
         ui.phase(format!("escaneando {}...", disk.display()));
         let disk_label = disk.display().to_string();
         scans.push(
-            scan::scan_disk_with_progress(disk, &manifest, |n| {
-                ui.scan_progress(&disk_label, n);
+            scan::scan_disk_with_progress(disk, &manifest, |n, bytes| {
+                ui.scan_progress(&disk_label, n, bytes);
             })
             .ctx(|| format!("escaneando {}", disk.display()))?,
         );
